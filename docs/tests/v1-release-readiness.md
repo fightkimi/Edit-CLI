@@ -2,9 +2,8 @@
 
 - Date: 2026-09-04
 - Package version: 0.6.0
-- Previously verified baseline commit: `9ac2994adf1442265fe4945bd660e68f72664856`
-- Status: private Beta engineering baseline; security hardening is locally verified and awaiting
-  immutable commit/remote CI evidence
+- Verified implementation commit: `23da4631c4a1a6936e473ad8cd12ec29e629993f`
+- Status: private Beta engineering baseline verified; not tagged or distributed
 
 This record captures evidence produced after the historical M0-M6 acceptance records. Statements
 in those milestone records such as “not committed” or “remote CI not run” describe their original
@@ -14,11 +13,11 @@ acceptance checkpoints and are superseded for current release readiness by this 
 
 - The complete V1 baseline and follow-up CI portability fixes are committed on `main` and pushed to
   `guang-tech/edit-CLI`.
-- At the verification checkpoint before this evidence-only record was added, local `HEAD`,
-  `origin/main`, and `refs/heads/main` resolved to the verified implementation commit above.
+- At the implementation verification checkpoint, local `HEAD`, `origin/main`, and
+  `refs/heads/main` resolved to the verified implementation commit above.
 - The working tree was clean after the final verification.
 - GitHub Actions run
-  `https://github.com/guang-tech/edit-CLI/actions/runs/33835807579` completed successfully.
+  `https://github.com/guang-tech/edit-CLI/actions/runs/33839215793` completed successfully.
 
 The workflow is pinned to Ubuntu 24.04 and installs FFmpeg, FFprobe, and Noto CJK fonts. This turns
 the media and Chinese-text coverage into executed Linux tests instead of environment-based skips.
@@ -29,10 +28,10 @@ the media and Chinese-text coverage into executed Linux tests instead of environ
 |---|---|---|
 | local Python 3.11.15 | `ruff check .` | passed |
 | local Python 3.11.15 | `mypy src` | passed; 53 source files |
-| local Python 3.11.15 | `pytest` | 84 passed |
-| GitHub Ubuntu 24.04 / Python 3.11.16 | lint, type check, test | passed; 84 tests |
-| GitHub Ubuntu 24.04 / Python 3.12.14 | lint, type check, test, build | passed; 84 tests; sdist and wheel built |
-| isolated local Python 3.11.15 | install built wheel | installed `interview-edit==0.6.0` with base dependencies |
+| local Python 3.11.15 | `pytest` with strict media dependency mode | 95 passed; no skips |
+| GitHub Ubuntu 24.04 / Python 3.11.16 | lint, type check, test | passed; 95 tests |
+| GitHub Ubuntu 24.04 / Python 3.12.14 | lint, type check, test, build | passed; 95 tests; sdist and wheel built |
+| isolated local Python 3.11.15 | install exact-commit wheel | installed `interview-edit==0.6.0` with base dependencies |
 | isolated local Python 3.11.15 | `interview-edit --version` | returned `0.6.0` |
 | isolated local Python 3.11.15 | `interview-edit --help` | displayed the complete V1 command surface |
 | isolated local Python 3.11.15 | base-wheel `doctor --json` | returned the stable JSON envelope and exit 4 because no optional transcription backend was installed |
@@ -41,9 +40,15 @@ The base-wheel doctor result is expected: speech recognition remains an explicit
 Python, Pillow, FFmpeg, FFprobe, portable H.264/AAC encoders, and required filters passed in that
 isolated environment.
 
-The post-audit hardening work removes production fake transcription, closes path-redirection and
+The verified hardening commit removes production fake transcription, closes path-redirection and
 source/sync/model-freshness gaps, adds strict CI dependency behavior, and adds installed-wheel CI
-smoke coverage. Its final commit and GitHub Actions run will be recorded here after both exist.
+smoke coverage. CI retained `interview-edit-dist-python-3.12` as artifact `9924357867` with archive
+digest `sha256:c1be5eefea4585bfb9c8fe19c6946ce023d9c03b90b9051b9e66aefa9c4de829`.
+
+The exact-commit local packages were also rebuilt successfully:
+
+- sdist SHA-256: `a0afeba008ac2c3615c5f03a906671361a61ffae6bc99a83cdf42de0abde7903`
+- wheel SHA-256: `d87eed1fc557f13f23a5479166ad052316add9e007063cc84ad0509a200e4fea`
 
 ## Current release blockers and limits
 

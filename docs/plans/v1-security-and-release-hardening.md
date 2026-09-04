@@ -1,6 +1,6 @@
 # V1 security and release hardening plan
 
-- Status: implementation complete; local verification passed; remote CI pending
+- Status: complete; local and remote verification passed
 - Date: 2026-09-04
 
 ## Goal
