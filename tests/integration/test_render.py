@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -398,7 +399,12 @@ def test_chinese_subtitle_and_title_render_through_local_png_rasters(tmp_path: P
     project, cutlist_path = _render_project(tmp_path)
     config_path = project / "interview-edit.yaml"
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    config["fonts"] = ["/System/Library/Fonts/STHeiti Medium.ttc"]
+    config["fonts"] = [
+        os.environ.get(
+            "INTERVIEW_EDIT_TEST_FONT",
+            "/System/Library/Fonts/STHeiti Medium.ttc",
+        )
+    ]
     config_path.write_text(
         yaml.safe_dump(config, allow_unicode=True, sort_keys=False),
         encoding="utf-8",
