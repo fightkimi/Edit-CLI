@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -87,9 +88,14 @@ def test_parse_loudness_measurement_handles_finite_and_unmeasurable_values() -> 
 
 
 def test_text_inspection_enforces_safe_area_and_counts_missing_glyphs() -> None:
-    font = Path("/System/Library/Fonts/STHeiti Medium.ttc")
+    font = Path(
+        os.environ.get(
+            "INTERVIEW_EDIT_TEST_FONT",
+            "/System/Library/Fonts/STHeiti Medium.ttc",
+        )
+    )
     if not font.is_file():
-        pytest.skip("macOS Chinese test font is unavailable")
+        pytest.skip(f"Chinese test font is unavailable: {font}")
 
     inspection = inspect_text_layout(
         text="中文 A \U0010ffff",
