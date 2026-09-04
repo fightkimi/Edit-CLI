@@ -46,7 +46,15 @@ from interview_edit.models.render import (
     RenderRunManifest,
 )
 from interview_edit.models.sync import SyncCamera, SyncReport
-from interview_edit.project.layout import atomic_write_text, canonical, is_within
+from interview_edit.project.layout import (
+    artifact_path,
+    atomic_write_text,
+    canonical,
+    is_within,
+    validate_artifact_path,
+)
+from interview_edit.proxy.service import validate_source_revision
+from interview_edit.sync.service import load_current_sync_report
 
 
 @dataclass(frozen=True)
@@ -177,9 +185,15 @@ def _select_items(cutlist: CutList, act_id: str | None, item_id: str | None) -> 
 def _output_path(request: RenderRequest, profile_name: str) -> Path:
     if request.output is not None:
         candidate = request.output.expanduser()
-        output = canonical(
-            request.project_root / candidate if not candidate.is_absolute() else candidate
-        )
+        requested = request.project_root / candidate if not candidate.is_absolute() else candidate
+        output = canonical(requested)
+        if not is_within(output, request.config.artifact_root):
+            raise PathSafetyError(
+                "render_output_outside_artifacts",
+                "Render output must remain inside the configured artifact root.",
+                details={"path": str(output), "artifactRoot": str(request.config.artifact_root)},
+            )
+        output = validate_artifact_path(requested, request.config.artifact_root)
     else:
         suffixes = [request.cutlist_path.stem]
         if request.act_id:
@@ -187,12 +201,8 @@ def _output_path(request: RenderRequest, profile_name: str) -> Path:
         if request.item_id:
             suffixes.append(request.item_id)
         suffixes.append(profile_name)
-        output = canonical(request.config.artifact_root / "renders" / ("-".join(suffixes) + ".mp4"))
-    if not is_within(output, request.config.artifact_root):
-        raise PathSafetyError(
-            "render_output_outside_artifacts",
-            "Render output must remain inside the configured artifact root.",
-            details={"path": str(output), "artifactRoot": str(request.config.artifact_root)},
+        output = artifact_path(
+            request.config.artifact_root, "renders", "-".join(suffixes) + ".mp4"
         )
     if output.suffix.lower() != ".mp4":
         raise UsageError(
@@ -201,8 +211,8 @@ def _output_path(request: RenderRequest, profile_name: str) -> Path:
             details={"path": str(output)},
         )
     internal_roots = (
-        request.config.artifact_root / "renders" / "cache",
-        request.config.artifact_root / "renders" / "runs",
+        artifact_path(request.config.artifact_root, "renders", "cache"),
+        artifact_path(request.config.artifact_root, "renders", "runs"),
     )
     if any(is_within(output, root) for root in internal_roots):
         raise PathSafetyError(
@@ -213,16 +223,8 @@ def _output_path(request: RenderRequest, profile_name: str) -> Path:
     return output
 
 
-def _sync_report(config: ProjectConfig, take_id: str) -> SyncReport:
-    path = config.artifact_root / "sync" / take_id / "sync.json"
-    try:
-        return SyncReport.model_validate_json(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, ValidationError) as exc:
-        raise PreflightError(
-            "sync_report_required",
-            "A valid sync report is required for camera or alternate-audio mapping.",
-            details={"takeId": take_id, "path": str(path)},
-        ) from exc
+def _sync_report(config: ProjectConfig, index: MediaIndex, take_id: str) -> SyncReport:
+    return load_current_sync_report(config, index, take_id)
 
 
 def _camera_time(reference_us: int, camera: SyncCamera) -> int:
@@ -237,6 +239,7 @@ def _reference_time(camera_us: int, camera: SyncCamera) -> int:
 def _map_source_range(
     *,
     config: ProjectConfig,
+    index: MediaIndex,
     source: MediaAsset,
     target: MediaAsset,
     start_us: int,
@@ -250,7 +253,7 @@ def _map_source_range(
             "Alternate camera/audio source must belong to the primary source take.",
             details={"sourceId": source.asset_id, "targetId": target.asset_id},
         )
-    report = _sync_report(config, source.take_id)
+    report = _sync_report(config, index, source.take_id)
     cameras = {camera.camera_id: camera for camera in report.cameras}
     source_camera = cameras.get(source.camera_id or "")
     target_camera = cameras.get(target.camera_id or "")
@@ -288,18 +291,13 @@ def _map_source_range(
 def _asset_path(config: ProjectConfig, asset: MediaAsset, profile_name: str) -> Path:
     if profile_name == "preview":
         return validated_video_proxy(config, asset)
-    path = canonical(Path(asset.canonical_path))
-    if not path.is_file():
-        raise PreflightError(
-            "source_missing",
-            "Indexed source media no longer exists.",
-            details={"assetId": asset.asset_id, "path": str(path)},
-        )
-    return path
+    validate_source_revision(asset)
+    return canonical(Path(asset.canonical_path))
 
 
 def _visual_intervals(
     config: ProjectConfig,
+    index: MediaIndex,
     item: TimelineItem,
     source: MediaAsset,
     assets: dict[str, MediaAsset],
@@ -334,6 +332,7 @@ def _visual_intervals(
         if cut.start_us > cursor:
             target_start, target_duration = _map_source_range(
                 config=config,
+                index=index,
                 source=source,
                 target=base_asset,
                 start_us=item.source_in_us + cursor,
@@ -353,6 +352,7 @@ def _visual_intervals(
             raise PreflightError("camera_unknown", f"Camera is not mapped: {cut.camera_id}")
         target_start, target_duration = _map_source_range(
             config=config,
+            index=index,
             source=source,
             target=target,
             start_us=item.source_in_us + cut.start_us,
@@ -372,6 +372,7 @@ def _visual_intervals(
         duration = item.timeline_duration_us - cursor
         target_start, target_duration = _map_source_range(
             config=config,
+            index=index,
             source=source,
             target=base_asset,
             start_us=item.source_in_us + cursor,
@@ -423,7 +424,7 @@ def _text_raster(
             "safeAreaPercent": safe_area_percent,
         }
     )
-    path = config.artifact_root / "renders" / "cache" / "text" / f"{cache_key}.png"
+    path = artifact_path(config.artifact_root, "renders", "cache", "text", f"{cache_key}.png")
     if not path.is_file():
         render_text_png(
             text=text,
@@ -500,7 +501,7 @@ def _item_input_fingerprints(
             for asset in assets.values()
             if asset.take_id == source.take_id and asset.camera_id in wanted
         )
-        sync_path = config.artifact_root / "sync" / source.take_id / "sync.json"
+        sync_path = artifact_path(config.artifact_root, "sync", source.take_id, "sync.json")
         fingerprints[f"sync:{source.take_id}"] = sha256_file(sync_path)
     for asset_id in sorted(referenced_ids):
         asset = assets[asset_id]
@@ -582,7 +583,7 @@ def _build_item(
 ) -> RenderItemManifest:
     assets = {asset.asset_id: asset for asset in index.assets}
     source = assets.get(item.source_id or "")
-    cache_root = request.config.artifact_root / "renders" / "cache" / "items"
+    cache_root = artifact_path(request.config.artifact_root, "renders", "cache", "items")
     output = cache_root / f"{cache_key}.mp4"
     manifest_path = cache_root / f"{cache_key}.json"
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -598,7 +599,7 @@ def _build_item(
 
         if item.kind in {TimelineItemKind.PRIMARY, TimelineItemKind.BROLL}:
             assert source is not None
-            intervals = _visual_intervals(request.config, item, source, assets)
+            intervals = _visual_intervals(request.config, index, item, source, assets)
             for position, interval in enumerate(intervals):
                 path = _asset_path(request.config, interval.asset, profile_name)
                 input_index = _add_media_input(
@@ -767,6 +768,7 @@ def _build_item(
         if audio is not None and source is not None and item.source_in_us is not None:
             audio_start, audio_duration = _map_source_range(
                 config=request.config,
+                index=index,
                 source=source,
                 target=audio,
                 start_us=item.source_in_us,
@@ -968,7 +970,9 @@ def render_cutlist(
     if probe_command is not None:
         command_log.commands.append(probe_command)
     run_id = _run_id()
-    run_path = request.config.artifact_root / "renders" / "runs" / f"{run_id}.json"
+    run_path = artifact_path(
+        request.config.artifact_root, "renders", "runs", f"{run_id}.json"
+    )
     cutlist_hash = sha256_file(request.cutlist_path)
     config_hash = _canonical_hash(request.config.model_dump(mode="json"))
     input_fingerprints: dict[str, str] = {}
@@ -1038,7 +1042,9 @@ def render_cutlist(
                     "inputs": item_fingerprints,
                 }
             )
-            cache_root = request.config.artifact_root / "renders" / "cache" / "items"
+            cache_root = artifact_path(
+                request.config.artifact_root, "renders", "cache", "items"
+            )
             cached = None
             if request.resume and not request.force:
                 cached = _cache_manifest(cache_root / f"{cache_key}.json", cache_key)
@@ -1183,6 +1189,9 @@ def render_cutlist(
             os.replace(assembled, candidate)
             assembled = None
 
+        for key in input_fingerprints:
+            if key.startswith("source:"):
+                validate_source_revision(assets[key.removeprefix("source:")])
         output = _publish_candidate(candidate, output_path, force=request.force)
         candidate = None
         output = output.model_copy(

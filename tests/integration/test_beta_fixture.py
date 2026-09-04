@@ -19,7 +19,7 @@ from tests.fixtures.media_factory import make_video, require_media_tools
 
 
 class MixedLanguageFixtureTranscriber:
-    backend = "mock"
+    backend = "fixture"
     backend_version = "beta-mixed-language-v1"
     requested_model = "fixture"
     resolved_model = "fixture:mixed-language"

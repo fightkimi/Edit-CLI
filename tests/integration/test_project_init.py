@@ -78,6 +78,19 @@ def test_init_rejects_artifact_and_media_overlap(tmp_path: Path) -> None:
     assert captured.value.code == "artifact_media_overlap"
 
 
+def test_init_rejects_project_metadata_inside_media_root(tmp_path: Path) -> None:
+    media = tmp_path / "media"
+    media.mkdir()
+
+    with pytest.raises(PathSafetyError) as captured:
+        initialize_project(
+            _request(media, media, artifact_root=tmp_path / "external-artifacts")
+        )
+
+    assert captured.value.code == "project_media_overlap"
+    assert not (media / "interview-edit.yaml").exists()
+
+
 def test_dry_run_does_not_create_project(tmp_path: Path) -> None:
     media = tmp_path / "media"
     media.mkdir()

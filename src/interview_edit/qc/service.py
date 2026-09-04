@@ -39,7 +39,7 @@ from interview_edit.models.qc import (
     QCTimeRange,
 )
 from interview_edit.models.render import RenderRunManifest
-from interview_edit.project.layout import atomic_write_text, canonical, is_within
+from interview_edit.project.layout import artifact_path, atomic_write_text, canonical, is_within
 
 
 @dataclass(frozen=True)
@@ -96,7 +96,7 @@ def _run_path(config: ProjectConfig, run_id: str) -> Path:
             "Render run ID has an invalid format.",
             details={"runId": run_id},
         )
-    return config.artifact_root / "renders" / "runs" / f"{run_id}.json"
+    return artifact_path(config.artifact_root, "renders", "runs", f"{run_id}.json")
 
 
 def load_render_run(config: ProjectConfig, run_id: str) -> tuple[RenderRunManifest, Path]:
@@ -125,7 +125,7 @@ def load_render_run(config: ProjectConfig, run_id: str) -> tuple[RenderRunManife
 
 
 def latest_successful_render(config: ProjectConfig) -> tuple[RenderRunManifest, Path]:
-    root = config.artifact_root / "renders" / "runs"
+    root = artifact_path(config.artifact_root, "renders", "runs")
     candidates: list[tuple[str, str, RenderRunManifest, Path]] = []
     for path in root.glob("render_*.json"):
         try:
@@ -532,8 +532,10 @@ def run_qc(
     if request.dry_run:
         return QCResult(report=base_report, report_path=None, checksum_path=None, dry_run=True)
 
-    final_root = request.config.artifact_root / "qc" / report_id
-    staging = request.config.artifact_root / "qc" / f".{report_id}.{uuid.uuid4().hex}.tmp"
+    final_root = artifact_path(request.config.artifact_root, "qc", report_id)
+    staging = artifact_path(
+        request.config.artifact_root, "qc", f".{report_id}.{uuid.uuid4().hex}.tmp"
+    )
     staging.mkdir(parents=True, exist_ok=False)
     findings: list[QCFinding] = []
     commands = []
@@ -611,7 +613,7 @@ def run_qc(
         output_path = canonical(Path(output_record.path)) if output_record is not None else None
         output_valid = False
         if output_record is not None and output_path is not None:
-            render_root = request.config.artifact_root / "renders"
+            render_root = artifact_path(request.config.artifact_root, "renders")
             if not is_within(output_path, render_root):
                 _finding(
                     findings,
@@ -900,6 +902,6 @@ def run_qc(
             checksum_path=report_path.with_name("report.sha256"),
             dry_run=False,
         )
-    except Exception:
+    except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise

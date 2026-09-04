@@ -106,12 +106,18 @@ Supported environment overrides:
 - `INTERVIEW_EDIT_TRANSCRIPTION__MODEL`
 - `INTERVIEW_EDIT_TRANSCRIPTION__MODEL_SOURCE`
 
+`transcription.backend` accepts `auto`, `mlx-whisper`, or `faster-whisper`. Deterministic fake
+transcription is available only as an injected test fixture, never as project configuration.
+
 ## Safety and path rules
 
 - `privacy_mode` must be chosen explicitly at initialization.
 - Relative media, artifact, and font paths resolve from the directory containing `interview-edit.yaml`.
 - Canonical artifact and media roots must not contain one another.
+- Generated artifact paths must remain under the artifact root without traversing an existing
+  symbolic-link component.
 - `init` requires existing readable media directories and does not copy or write into them.
+- The project directory and explicit cut-list outputs must not be placed inside a media root.
 - Existing configuration is preserved unless `--force` is explicit; force preserves the stable project ID.
 - Model source `registry` never implies download permission. Model source `local` must resolve to an existing path before transcription.
 - M3 resolves registry identifiers from local caches only. `download_policy: ask` means report that

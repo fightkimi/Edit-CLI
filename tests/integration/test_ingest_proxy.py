@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 
 from interview_edit.adapters.process import ProcessResult, SubprocessRunner
 from interview_edit.cli.app import app
-from interview_edit.errors import PreflightError
+from interview_edit.errors import PathSafetyError, PreflightError
 from interview_edit.exit_codes import ExitCode
 from interview_edit.ingest.service import IngestRequest, ingest_media
 from interview_edit.project.service import InitRequest, InitResult, initialize_project
@@ -253,6 +253,22 @@ def test_ingest_skips_symlink_whose_target_is_outside_media_root(tmp_path: Path)
 
     assert [asset.relative_path for asset in result.index.assets] == ["inside.mp4"]
     assert [warning.code for warning in result.index.warnings] == ["source_symlink_outside_root"]
+
+
+def test_ingest_rejects_symlinked_artifact_directory(tmp_path: Path) -> None:
+    require_media_tools()
+    media = tmp_path / "media"
+    make_video(media / "inside.mp4")
+    project = _project(tmp_path, media)
+    index_root = project.config.artifact_root / "index"
+    index_root.rmdir()
+    index_root.symlink_to(media, target_is_directory=True)
+
+    with pytest.raises(PathSafetyError) as captured:
+        ingest_media(IngestRequest(config=project.config), runner=SubprocessRunner())
+
+    assert captured.value.code == "artifact_path_unsafe"
+    assert not (media / "media-index.json").exists()
 
 
 def test_cli_broken_media_returns_preflight_json(tmp_path: Path) -> None:

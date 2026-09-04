@@ -7,7 +7,6 @@ import yaml
 from typer.testing import CliRunner
 
 from interview_edit.adapters.process import SubprocessRunner
-from interview_edit.adapters.transcription import MockTranscriber
 from interview_edit.cli.app import app
 from interview_edit.exit_codes import ExitCode
 from interview_edit.ingest.service import IngestRequest, ingest_media
@@ -15,6 +14,7 @@ from interview_edit.project.service import InitRequest, initialize_project
 from interview_edit.proxy.service import ProxyRequest, build_proxies
 from interview_edit.transcribe.service import TranscribeRequest, transcribe_assets
 from tests.fixtures.media_factory import make_video, require_media_tools
+from tests.fixtures.transcription import MockTranscriber
 
 runner = CliRunner()
 
@@ -55,6 +55,38 @@ def test_cli_scaffold_and_privacy_safe_inspect(tmp_path: Path) -> None:
     assert inspect.exit_code == ExitCode.SUCCESS, inspect.output
     assert "private act title" not in inspect.stdout
     assert len(inspect.stdout.strip().splitlines()) == 1
+
+
+def test_cli_scaffold_rejects_output_inside_media_root(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    media = project / "source"
+    media.mkdir(parents=True)
+    initialize_project(
+        InitRequest(
+            project=project,
+            name="M4 path safety",
+            media_roots=[media],
+            privacy="strict",
+        )
+    )
+    output = media / "injected.yaml"
+
+    result = runner.invoke(
+        app,
+        [
+            "cutlist",
+            "scaffold",
+            "--project",
+            str(project),
+            "--output",
+            str(output),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == ExitCode.PATH_ERROR, result.output
+    assert json.loads(result.stdout)["error"]["code"] == "cutlist_output_in_media_root"
+    assert not output.exists()
 
 
 def test_cli_validate_schema_error_is_exit_three_and_no_render(tmp_path: Path) -> None:

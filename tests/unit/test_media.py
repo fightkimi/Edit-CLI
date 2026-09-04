@@ -4,9 +4,15 @@ import json
 import os
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from interview_edit.adapters.filesystem import full_sha256, quick_fingerprint
 from interview_edit.adapters.media import parse_probe_payload
+from interview_edit.errors import PathSafetyError
 from interview_edit.ingest.service import compute_asset_id
+from interview_edit.models.media import CameraMapRule
+from interview_edit.project.layout import artifact_path
 
 
 def test_asset_id_is_stable_for_normalized_relative_path(tmp_path: Path) -> None:
@@ -44,6 +50,33 @@ def test_full_hash_detects_change_outside_fast_samples(tmp_path: Path) -> None:
 
     assert quick_fingerprint(source) == fast_before
     assert full_sha256(source) != full_before
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("take_id", "../outside"),
+        ("take_id", "/absolute"),
+        ("camera_id", "nested/camera"),
+        ("camera_id", ".."),
+    ],
+)
+def test_camera_map_rejects_path_bearing_identifiers(field: str, value: str) -> None:
+    with pytest.raises(ValidationError):
+        CameraMapRule(glob="*.mp4", **{field: value})
+
+
+def test_artifact_path_rejects_existing_symlink_component(tmp_path: Path) -> None:
+    artifact_root = tmp_path / "artifacts"
+    outside = tmp_path / "outside"
+    artifact_root.mkdir()
+    outside.mkdir()
+    (artifact_root / "renders").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(PathSafetyError) as captured:
+        artifact_path(artifact_root, "renders", "output.mp4")
+
+    assert captured.value.code == "artifact_path_unsafe"
 
 
 def test_ffprobe_parser_persists_integer_microseconds_and_stream_time_bases() -> None:

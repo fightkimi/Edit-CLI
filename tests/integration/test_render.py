@@ -24,10 +24,10 @@ from interview_edit.models.cutlist import (
     TimelineItem,
     Transition,
 )
-from interview_edit.models.sync import SyncCamera, SyncReport
 from interview_edit.project.service import InitRequest, initialize_project
 from interview_edit.proxy.service import ProxyRequest, build_proxies
 from interview_edit.render.service import RenderRequest, render_cutlist
+from interview_edit.sync.service import ManualOffset, SyncRequest, sync_take
 from tests.fixtures.media_factory import make_video, require_media_tools
 
 runner = CliRunner()
@@ -395,6 +395,31 @@ def test_domain_invalid_cutlist_starts_no_ffmpeg_run_or_output(tmp_path: Path) -
     assert not list((renders / "runs").glob("*.json"))
 
 
+def test_cutlist_validation_enforces_persisted_source_full_hash(tmp_path: Path) -> None:
+    project, cutlist_path = _render_project(tmp_path)
+    index_path = project / "artifacts" / "index" / "media-index.json"
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    index["assets"][0]["full_hash"] = f"sha256:{'0' * 64}"
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "cutlist",
+            "validate",
+            "--project",
+            str(project),
+            "--cutlist",
+            str(cutlist_path),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == ExitCode.PREFLIGHT_FAILED, result.output
+    issues = json.loads(result.stdout)["data"]["issues"]
+    assert any(issue["code"] == "source_index_stale" for issue in issues)
+
+
 def test_chinese_subtitle_and_title_render_through_local_png_rasters(tmp_path: Path) -> None:
     project, cutlist_path = _render_project(tmp_path)
     config_path = project / "interview-edit.yaml"
@@ -570,39 +595,19 @@ def test_camera_broll_and_paired_fade_are_rendered_with_primary_audio(tmp_path: 
         runner=SubprocessRunner(),
     )
     assets = {Path(asset.canonical_path).name: asset for asset in indexed.index.assets}
-    sync = SyncReport(
-        take_id="take-01",
-        reference_camera_id="wide",
-        cache_key="0" * 64,
-        analysis={"fixture": True},
-        cameras=[
-            SyncCamera(
-                camera_id="wide",
-                asset_id=assets["wide.mp4"].asset_id,
-                status="reference",
-                offset_us=0,
-                drift_us_per_hour=0,
-                drift_ppm=0,
-                confidence=1,
-                provenance="reference",
+    sync_result = sync_take(
+        SyncRequest(
+            config=initialized.config,
+            index=indexed.index,
+            take_id="take-01",
+            reference_camera_id="wide",
+            manual_offsets=(
+                ManualOffset(camera_id="close", offset_us=0, original_value="0us"),
             ),
-            SyncCamera(
-                camera_id="close",
-                asset_id=assets["close.mp4"].asset_id,
-                status="manual",
-                offset_us=0,
-                drift_us_per_hour=0,
-                drift_ppm=0,
-                confidence=1,
-                provenance="manual_override",
-                manual_value="0us",
-            ),
-        ],
-        completed_at="2026-09-03T00:00:00Z",
+        ),
+        runner=SubprocessRunner(),
     )
-    sync_path = initialized.config.artifact_root / "sync" / "take-01" / "sync.json"
-    sync_path.parent.mkdir(parents=True)
-    sync_path.write_text(sync.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    sync_path = sync_result.report_path
     transition = Transition(duration_us=100_000)
     wide = assets["wide.mp4"]
     document = CutList(
@@ -723,3 +728,25 @@ def test_camera_broll_and_paired_fade_are_rendered_with_primary_audio(tmp_path: 
         "itemId": "item_002",
         "itemIds": ["item_002"],
     }
+
+    stale_sync = json.loads(sync_path.read_text(encoding="utf-8"))
+    reference = next(camera for camera in stale_sync["cameras"] if camera["status"] == "reference")
+    reference["offset_us"] = 123_456
+    sync_path.write_text(json.dumps(stale_sync), encoding="utf-8")
+    stale_validation = runner.invoke(
+        app,
+        [
+            "cutlist",
+            "validate",
+            "--project",
+            str(project),
+            "--cutlist",
+            str(cutlist_path),
+            "--json",
+        ],
+    )
+    assert stale_validation.exit_code == ExitCode.PREFLIGHT_FAILED
+    assert any(
+        issue["code"] == "sync_report_stale"
+        for issue in json.loads(stale_validation.stdout)["data"]["issues"]
+    )

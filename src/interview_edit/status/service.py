@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from interview_edit.config.models import ProjectConfig
+from interview_edit.project.layout import artifact_path
 
 ARTIFACT_STAGES: dict[str, tuple[str, ...]] = {
     "ingest": ("index",),
@@ -55,7 +56,7 @@ def _published_render_count(directory: Path) -> int:
 def read_project_status(config: ProjectConfig) -> ProjectStatus:
     stages: dict[str, dict[str, Any]] = {}
     for stage, directories in ARTIFACT_STAGES.items():
-        paths = [config.artifact_root / directory for directory in directories]
+        paths = [artifact_path(config.artifact_root, directory) for directory in directories]
         count = (
             _published_render_count(paths[0])
             if stage == "render"

@@ -28,6 +28,7 @@ from interview_edit.project.layout import (
     canonical,
     is_within,
     validate_artifact_boundary,
+    validate_artifact_path,
     validate_media_roots,
 )
 
@@ -234,7 +235,10 @@ def _camera_fields(camera_map: CameraMap, relative_path: Path) -> tuple[str | No
 
 
 def index_path_for(config: ProjectConfig) -> Path:
-    return config.artifact_root / "index" / INDEX_FILENAME
+    return validate_artifact_path(
+        config.artifact_root / "index" / INDEX_FILENAME,
+        config.artifact_root,
+    )
 
 
 def read_media_index(

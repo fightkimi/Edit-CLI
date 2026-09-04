@@ -4,6 +4,8 @@ from typing import Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field
 
+_IDENTIFIER_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$"
+
 
 class MediaModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -53,8 +55,8 @@ class MediaAsset(MediaModel):
     start_time_us: int | None = None
     video_stream: VideoStream | None = None
     audio_streams: list[AudioStream] = Field(default_factory=list)
-    camera_id: str | None = None
-    take_id: str | None = None
+    camera_id: str | None = Field(default=None, pattern=_IDENTIFIER_PATTERN)
+    take_id: str | None = Field(default=None, pattern=_IDENTIFIER_PATTERN)
     capture_time: str | None = None
     probe_version: str
 
@@ -86,8 +88,8 @@ class MediaIndex(MediaModel):
 
 class CameraMapRule(MediaModel):
     glob: str = Field(min_length=1)
-    camera_id: str | None = Field(default=None, min_length=1)
-    take_id: str | None = Field(default=None, min_length=1)
+    camera_id: str | None = Field(default=None, pattern=_IDENTIFIER_PATTERN)
+    take_id: str | None = Field(default=None, pattern=_IDENTIFIER_PATTERN)
 
 
 class CameraMap(MediaModel):

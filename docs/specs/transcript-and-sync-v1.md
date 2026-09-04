@@ -98,7 +98,9 @@ published atomically. `--resume` reuses only checkpoints whose identity and boun
 
 ## Sync report
 
-`artifacts/sync/<take_id>/sync.json` contains:
+`artifacts/sync/<take_id>/sync.json` contains the report below. A sibling `sync.sha256` stores the
+report's SHA-256; cache reuse, cut-list validation, and rendering reject a missing or mismatched
+checksum.
 
 ```json
 {
@@ -166,6 +168,14 @@ Transcript raw cache identity includes schema, source fingerprint/full hash, val
 hash, backend and version, requested and resolved model identity, device, language, and recognition
 parameters. Correction dictionary bytes are intentionally excluded from raw identity.
 
+For a resolved local model directory, model identity is the deterministic recursive manifest of
+every regular file's relative path, size, and SHA-256. The CLI computes it once per transcription
+invocation, so any local model-file content change invalidates transcript reuse.
+
 Sync identity includes schema, take/camera membership, validated audio proxy hashes, analysis
 settings, manual offsets, and NumPy implementation version. Visual evidence is regenerated when the
 sync identity changes or `--force` is used.
+
+Cut-list validation and render-time mapping recompute this identity from the current media index,
+source revisions, proxy manifests, settings, and recorded manual overrides. A report whose cache key
+cannot be reproduced is stale and blocks rendering until synchronization is run again.

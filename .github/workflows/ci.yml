@@ -11,6 +11,7 @@ jobs:
   test:
     runs-on: ubuntu-24.04
     env:
+      INTERVIEW_EDIT_CI: "1"
       INTERVIEW_EDIT_TEST_FONT: /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
     strategy:
       fail-fast: false
@@ -41,3 +42,18 @@ jobs:
       - name: Build
         if: matrix.python-version == '3.12'
         run: uv build
+      - name: Smoke installed wheel
+        if: matrix.python-version == '3.12'
+        run: |
+          uv venv .wheel-smoke
+          uv pip install --python .wheel-smoke/bin/python dist/*.whl
+          .wheel-smoke/bin/interview-edit --version
+          .wheel-smoke/bin/interview-edit --help
+          .wheel-smoke/bin/python -c 'import json, subprocess; p = subprocess.run([".wheel-smoke/bin/interview-edit", "doctor", "--json"], capture_output=True, text=True); assert p.returncode == 4, p.stdout + p.stderr; json.loads(p.stdout)'
+      - name: Retain distribution packages
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: interview-edit-dist-python-${{ matrix.python-version }}
+          path: dist/
+          if-no-files-found: error

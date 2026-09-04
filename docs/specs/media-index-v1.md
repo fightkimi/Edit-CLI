@@ -57,6 +57,9 @@ rules:
 
 Rules are evaluated in order against root-relative POSIX paths. Later matching rules override only the non-null values they provide. The CLI does not infer camera or take identity from filenames.
 
+Camera and take IDs are path-safe identifiers: 1-120 letters, digits, underscores, or hyphens,
+beginning with a letter or digit. Path separators and `.`/`..` components are invalid.
+
 ## Time map
 
 Each video proxy has `<asset_id>.time-map.json`:
@@ -87,6 +90,10 @@ Each video proxy has `<asset_id>.time-map.json`:
 - completion timestamp
 
 A cache hit requires matching keys plus existing output size and SHA-256. Files from an older or failed run are never treated as valid solely because they exist.
+
+Before dependent work, the current source must still match indexed size, modification time, fast
+fingerprint, and optional full SHA-256. When `full_hash` is present it is enforced during cut-list
+validation and source-backed rendering, including a final pre-publication render check.
 
 ## Contact sheets
 

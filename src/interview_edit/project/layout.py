@@ -77,6 +77,39 @@ def validate_artifact_boundary(artifact_root: Path, media_roots: list[Path]) -> 
     return artifact
 
 
+def validate_artifact_path(path: Path, artifact_root: Path) -> Path:
+    root = canonical(artifact_root)
+    candidate = Path(os.path.abspath(path.expanduser()))
+    if candidate != root and root not in candidate.parents:
+        raise PathSafetyError(
+            "artifact_path_unsafe",
+            "Generated artifact path must remain inside the configured artifact root.",
+            details={"path": str(candidate), "artifactRoot": str(root)},
+        )
+    current = root
+    for part in candidate.relative_to(root).parts:
+        current /= part
+        if current.is_symlink():
+            raise PathSafetyError(
+                "artifact_path_unsafe",
+                "Generated artifact path must not traverse a symbolic link.",
+                details={"path": str(candidate), "symlink": str(current)},
+            )
+    resolved = canonical(candidate)
+    if not is_within(resolved, root):
+        raise PathSafetyError(
+            "artifact_path_unsafe",
+            "Generated artifact path resolves outside the configured artifact root.",
+            details={"path": str(candidate), "resolvedPath": str(resolved)},
+        )
+    return resolved
+
+
+def artifact_path(artifact_root: Path, *parts: str) -> Path:
+    """Build a generated-artifact path and reject escapes or symlink traversal."""
+    return validate_artifact_path(artifact_root.joinpath(*parts), artifact_root)
+
+
 def atomic_write_text(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary: str | None = None

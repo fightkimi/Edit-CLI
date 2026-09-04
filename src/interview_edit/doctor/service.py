@@ -142,14 +142,6 @@ def _transcription_checks(
     faster_available = _module_available("faster_whisper")
     requested = config.transcription.backend if config else TranscriptionBackend.AUTO
 
-    if requested == TranscriptionBackend.MOCK:
-        return [
-            DoctorCheck(
-                "transcription_backend",
-                "warning",
-                "Mock transcription is selected; it is suitable only for tests.",
-            )
-        ]
     candidates: list[tuple[str, str]] = []
     if requested == TranscriptionBackend.MLX_WHISPER:
         if mlx_available:

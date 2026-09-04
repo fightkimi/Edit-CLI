@@ -20,7 +20,6 @@ class TranscriptionBackend(StrEnum):
     AUTO = "auto"
     MLX_WHISPER = "mlx-whisper"
     FASTER_WHISPER = "faster-whisper"
-    MOCK = "mock"
 
 
 class ModelSource(StrEnum):

@@ -18,6 +18,7 @@ from interview_edit.project.layout import (
     PROJECT_DIRECTORIES,
     atomic_write_text,
     canonical,
+    is_within,
     validate_artifact_boundary,
     validate_media_roots,
 )
@@ -85,6 +86,13 @@ def initialize_project(request: InitRequest) -> InitResult:
         raise UsageError("name_required", "Project name must not be empty.")
 
     media_roots = validate_media_roots(request.media_roots)
+    for media_root in media_roots:
+        if is_within(project, media_root):
+            raise PathSafetyError(
+                "project_media_overlap",
+                "The editing project may not be created inside a source-media root.",
+                details={"projectRoot": str(project), "mediaRoot": str(media_root)},
+            )
     requested_artifact = request.artifact_root or Path("artifacts")
     if not requested_artifact.is_absolute():
         requested_artifact = project / requested_artifact

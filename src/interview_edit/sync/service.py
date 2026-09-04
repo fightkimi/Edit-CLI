@@ -22,7 +22,7 @@ from interview_edit.config.models import ProjectConfig
 from interview_edit.errors import DependencyError, PreflightError, ProcessingError, UsageError
 from interview_edit.models.media import MediaAsset, MediaIndex
 from interview_edit.models.sync import SyncCamera, SyncEvidence, SyncReport, SyncWindow
-from interview_edit.project.layout import atomic_write_text
+from interview_edit.project.layout import artifact_path, atomic_write_text
 from interview_edit.proxy.service import validate_source_revision
 from interview_edit.sync.analysis import energy_envelope, estimate_sync, window_centers_us
 
@@ -163,7 +163,129 @@ def _cache_key(
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def _checksum_path(report_path: Path) -> Path:
+    return report_path.with_name("sync.sha256")
+
+
+def _report_checksum_valid(report_path: Path) -> bool:
+    checksum_path = _checksum_path(report_path)
+    try:
+        if checksum_path.is_symlink():
+            return False
+        expected = checksum_path.read_text(encoding="utf-8").strip()
+        return expected == sha256_file(report_path)
+    except (OSError, UnicodeError):
+        return False
+
+
+def _analysis_settings(
+    config: ProjectConfig,
+    cameras: dict[str, MediaAsset],
+    reference_camera_id: str,
+    window_count: int,
+) -> dict[str, Any]:
+    return {
+        "sample_rate": config.sync.sample_rate,
+        "envelope_hz": config.sync.envelope_hz,
+        "window_count": window_count,
+        "window_duration_us": config.sync.window_duration_seconds * 1_000_000,
+        "max_offset_us": config.sync.max_offset_seconds * 1_000_000,
+        "minimum_confidence": config.sync.minimum_confidence,
+        "drift_tolerance_us_per_hour": config.sync.drift_tolerance_us_per_hour,
+        "camera_order": [reference_camera_id]
+        + [camera for camera in sorted(cameras) if camera != reference_camera_id],
+    }
+
+
+def load_current_sync_report(
+    config: ProjectConfig,
+    index: MediaIndex,
+    take_id: str,
+) -> SyncReport:
+    """Load a sync report only when its current inputs still reproduce its cache key."""
+    path = artifact_path(config.artifact_root, "sync", take_id, "sync.json")
+    try:
+        report = SyncReport.model_validate_json(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValidationError) as exc:
+        raise PreflightError(
+            "sync_report_required",
+            "A valid sync report is required for camera or alternate-audio mapping.",
+            details={"takeId": take_id, "path": str(path)},
+        ) from exc
+    if not _report_checksum_valid(path):
+        raise PreflightError(
+            "sync_report_stale",
+            "Synchronization report checksum is missing or does not match; run sync again.",
+            details={"takeId": take_id, "path": str(path)},
+        )
+    cameras = _take_assets(index, take_id)
+    report_assets = {camera.camera_id: camera.asset_id for camera in report.cameras}
+    current_assets = {camera_id: asset.asset_id for camera_id, asset in cameras.items()}
+    if (
+        report.take_id != take_id
+        or report.reference_camera_id not in cameras
+        or report_assets != current_assets
+        or len(report_assets) != len(report.cameras)
+    ):
+        raise PreflightError(
+            "sync_report_stale",
+            "Synchronization inputs changed; run sync again.",
+            details={"takeId": take_id, "path": str(path)},
+        )
+    window_count = report.analysis.get("window_count")
+    if not isinstance(window_count, int) or window_count < 3:
+        raise PreflightError(
+            "sync_report_stale",
+            "Synchronization settings are missing or invalid; run sync again.",
+            details={"takeId": take_id, "path": str(path)},
+        )
+    analysis = _analysis_settings(
+        config, cameras, report.reference_camera_id, window_count
+    )
+    if report.analysis != analysis:
+        raise PreflightError(
+            "sync_report_stale",
+            "Synchronization settings changed; run sync again.",
+            details={"takeId": take_id, "path": str(path)},
+        )
+    audio_hashes: dict[str, str] = {}
+    for camera_id, asset in cameras.items():
+        validate_source_revision(asset)
+        audio_hashes[camera_id] = validated_audio_proxy(config, asset).sha256
+    manual_offsets = tuple(
+        ManualOffset(
+            camera_id=camera.camera_id,
+            offset_us=camera.offset_us,
+            original_value=camera.manual_value or f"{camera.offset_us}us",
+        )
+        for camera in report.cameras
+        if camera.provenance == "manual_override"
+    )
+    expected_key = _cache_key(
+        request=SyncRequest(
+            config=config,
+            index=index,
+            take_id=take_id,
+            reference_camera_id=report.reference_camera_id,
+            window_count=window_count,
+            manual_offsets=manual_offsets,
+        ),
+        cameras=cameras,
+        audio_hashes=audio_hashes,
+        analysis=analysis,
+    )
+    if report.cache_key != expected_key:
+        raise PreflightError(
+            "sync_report_stale",
+            "Synchronization inputs changed; run sync again.",
+            details={"takeId": take_id, "path": str(path)},
+        )
+    return report
+
+
 def _read_cached_report(path: Path, cache_key: str, *, visual_check: bool) -> SyncReport | None:
+    if not _report_checksum_valid(path):
+        return None
     try:
         report = SyncReport.model_validate_json(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, ValidationError):
@@ -205,7 +327,9 @@ def _visual_evidence(
     centers: tuple[int, ...],
     runner: ProcessRunner,
 ) -> list[SyncEvidence]:
-    evidence_root = request.config.artifact_root / "sync" / request.take_id / "evidence"
+    evidence_root = artifact_path(
+        request.config.artifact_root, "sync", request.take_id, "evidence"
+    )
     evidence_root.mkdir(parents=True, exist_ok=True)
     result_by_camera = {item.camera_id: item for item in results}
     ordered_cameras = [request.reference_camera_id] + [
@@ -220,42 +344,47 @@ def _visual_evidence(
         )
         os.close(descriptor)
         temporary = Path(temporary_name)
-        args = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y"]
-        for camera_id, proxy in zip(ordered_cameras, proxies, strict=True):
-            seek_us = max(0, center_us + result_by_camera[camera_id].offset_us)
-            args.extend(["-ss", f"{seek_us / 1_000_000:.6f}", "-i", str(proxy)])
-        filters = [
-            f"[{input_index}:v]scale=480:270:force_original_aspect_ratio=decrease,"
-            f"pad=480:270:(ow-iw)/2:(oh-ih)/2[v{input_index}]"
-            for input_index in range(len(proxies))
-        ]
-        stack_inputs = "".join(f"[v{input_index}]" for input_index in range(len(proxies)))
-        filters.append(f"{stack_inputs}hstack=inputs={len(proxies)}[out]")
-        args.extend(
-            [
-                "-filter_complex",
-                ";".join(filters),
-                "-map",
-                "[out]",
-                "-frames:v",
-                "1",
-                "-q:v",
-                "3",
-                str(temporary),
+        try:
+            args = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y"]
+            for camera_id, proxy in zip(ordered_cameras, proxies, strict=True):
+                seek_us = max(0, center_us + result_by_camera[camera_id].offset_us)
+                args.extend(["-ss", f"{seek_us / 1_000_000:.6f}", "-i", str(proxy)])
+            filters = [
+                f"[{input_index}:v]scale=480:270:force_original_aspect_ratio=decrease,"
+                f"pad=480:270:(ow-iw)/2:(oh-ih)/2[v{input_index}]"
+                for input_index in range(len(proxies))
             ]
-        )
-        result = runner.run(args, timeout_seconds=10 * 60)
-        if result.return_code == 127:
-            temporary.unlink(missing_ok=True)
-            raise DependencyError("ffmpeg_missing", "Required executable is unavailable: ffmpeg.")
-        if result.return_code != 0 or not temporary.is_file() or temporary.stat().st_size == 0:
-            temporary.unlink(missing_ok=True)
-            raise ProcessingError(
-                "sync_visual_evidence_failed",
-                "FFmpeg could not generate visual synchronization evidence.",
-                details={"returnCode": result.return_code, "stderr": result.stderr[-4000:]},
+            stack_inputs = "".join(
+                f"[v{input_index}]" for input_index in range(len(proxies))
             )
-        os.replace(temporary, output)
+            filters.append(f"{stack_inputs}hstack=inputs={len(proxies)}[out]")
+            args.extend(
+                [
+                    "-filter_complex",
+                    ";".join(filters),
+                    "-map",
+                    "[out]",
+                    "-frames:v",
+                    "1",
+                    "-q:v",
+                    "3",
+                    str(temporary),
+                ]
+            )
+            result = runner.run(args, timeout_seconds=10 * 60)
+            if result.return_code == 127:
+                raise DependencyError(
+                    "ffmpeg_missing", "Required executable is unavailable: ffmpeg."
+                )
+            if result.return_code != 0 or not temporary.is_file() or temporary.stat().st_size == 0:
+                raise ProcessingError(
+                    "sync_visual_evidence_failed",
+                    "FFmpeg could not generate visual synchronization evidence.",
+                    details={"returnCode": result.return_code, "stderr": result.stderr[-4000:]},
+                )
+            os.replace(temporary, output)
+        finally:
+            temporary.unlink(missing_ok=True)
         evidence.append(
             SyncEvidence(
                 kind="visual_contact_sheet",
@@ -307,19 +436,11 @@ def sync_take(
         raise UsageError(
             "sync_window_count_invalid", "Synchronization requires at least 3 windows."
         )
+    analysis = _analysis_settings(
+        request.config, cameras, request.reference_camera_id, window_count
+    )
     window_duration_us = request.config.sync.window_duration_seconds * 1_000_000
     max_offset_us = request.config.sync.max_offset_seconds * 1_000_000
-    analysis: dict[str, Any] = {
-        "sample_rate": request.config.sync.sample_rate,
-        "envelope_hz": request.config.sync.envelope_hz,
-        "window_count": window_count,
-        "window_duration_us": window_duration_us,
-        "max_offset_us": max_offset_us,
-        "minimum_confidence": request.config.sync.minimum_confidence,
-        "drift_tolerance_us_per_hour": request.config.sync.drift_tolerance_us_per_hour,
-        "camera_order": [request.reference_camera_id]
-        + [camera for camera in sorted(cameras) if camera != request.reference_camera_id],
-    }
     audio_paths: dict[str, Path] = {}
     audio_hashes: dict[str, str] = {}
     for camera_id, asset in cameras.items():
@@ -330,7 +451,9 @@ def sync_take(
     cache_key = _cache_key(
         request=request, cameras=cameras, audio_hashes=audio_hashes, analysis=analysis
     )
-    report_path = request.config.artifact_root / "sync" / request.take_id / "sync.json"
+    report_path = artifact_path(
+        request.config.artifact_root, "sync", request.take_id, "sync.json"
+    )
     if request.dry_run:
         return SyncResult(
             report=None,
@@ -352,7 +475,11 @@ def sync_take(
         return SyncResult(
             report=cached,
             report_path=report_path,
-            artifacts=[report_path, *(Path(item.path) for item in cached.evidence)],
+            artifacts=[
+                report_path,
+                _checksum_path(report_path),
+                *(Path(item.path) for item in cached.evidence),
+            ],
             cached=True,
             uncertain_cameras=cached_uncertain,
             dry_run=False,
@@ -469,10 +596,12 @@ def sync_take(
         completed_at=_utc_now(),
     )
     atomic_write_text(report_path, report.model_dump_json(indent=2) + "\n")
+    checksum_path = _checksum_path(report_path)
+    atomic_write_text(checksum_path, sha256_file(report_path) + "\n")
     return SyncResult(
         report=report,
         report_path=report_path,
-        artifacts=[report_path, *(Path(item.path) for item in evidence)],
+        artifacts=[report_path, checksum_path, *(Path(item.path) for item in evidence)],
         cached=False,
         uncertain_cameras=uncertain,
         dry_run=False,

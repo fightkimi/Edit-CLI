@@ -18,7 +18,8 @@ No Whisper implementation or model cache was present before M0. The reference pr
 - Use FFmpeg/FFprobe through argument-array subprocess adapters.
 - Treat libx264 as the portable H.264 fallback. Enable VideoToolbox only after a real encoding probe succeeds in the execution environment.
 - Make `mlx-whisper` the preferred Apple Silicon transcription adapter.
-- Keep Faster-Whisper as the NVIDIA CUDA and portable CPU adapter, and a deterministic mock adapter for tests.
+- Keep Faster-Whisper as the NVIDIA CUDA and portable CPU adapter. Use a deterministic fake only as
+  a dependency-injected test fixture; it is not selectable from production configuration.
 - Probe transcription by importing the selected backend in the current execution environment; package discovery alone does not prove it is usable. Allow up to 60 seconds for a first MLX import on this host.
 - Never download a model implicitly. A remote model identifier is unresolved until the user explicitly authorizes download; a local path must exist before use.
 

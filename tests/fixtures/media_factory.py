@@ -1,19 +1,27 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import wave
 from pathlib import Path
+from typing import NoReturn
 
 import numpy as np
 import pytest
+
+
+def _unavailable(message: str) -> NoReturn:
+    if os.environ.get("INTERVIEW_EDIT_CI") == "1":
+        pytest.fail(message)
+    pytest.skip(message)
 
 
 def require_media_tools() -> tuple[str, str]:
     ffmpeg = shutil.which("ffmpeg")
     ffprobe = shutil.which("ffprobe")
     if ffmpeg is None or ffprobe is None:
-        pytest.skip("FFmpeg and FFprobe are required for this integration test")
+        _unavailable("FFmpeg and FFprobe are required for this integration test")
     return ffmpeg, ffprobe
 
 
@@ -59,7 +67,7 @@ def make_video(
         timeout=30,
     )
     if completed.returncode != 0:
-        pytest.skip(f"local FFmpeg cannot create H.264 fixture: {completed.stderr}")
+        _unavailable(f"local FFmpeg cannot create H.264 fixture: {completed.stderr}")
 
 
 def make_noise_wav(
@@ -122,4 +130,4 @@ def make_video_from_audio(path: Path, audio_path: Path, *, delay_ms: int) -> Non
         timeout=30,
     )
     if completed.returncode != 0:
-        pytest.skip(f"local FFmpeg cannot create synchronized fixture: {completed.stderr}")
+        _unavailable(f"local FFmpeg cannot create synchronized fixture: {completed.stderr}")

@@ -9,6 +9,7 @@ from interview_edit.adapters.filesystem import sha256_file
 from interview_edit.config.models import ProjectConfig
 from interview_edit.errors import PreflightError
 from interview_edit.models.media import MediaAsset, ProxyManifest
+from interview_edit.project.layout import artifact_path
 
 
 @dataclass(frozen=True)
@@ -19,8 +20,10 @@ class ValidatedAudioProxy:
 
 
 def validated_audio_proxy(config: ProjectConfig, asset: MediaAsset) -> ValidatedAudioProxy:
-    manifest_path = config.artifact_root / "proxies" / f"{asset.asset_id}.manifest.json"
-    expected_path = config.artifact_root / "audio" / f"{asset.asset_id}.wav"
+    manifest_path = artifact_path(
+        config.artifact_root, "proxies", f"{asset.asset_id}.manifest.json"
+    )
+    expected_path = artifact_path(config.artifact_root, "audio", f"{asset.asset_id}.wav")
     try:
         manifest = ProxyManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, ValidationError) as exc:
@@ -70,8 +73,10 @@ def validated_audio_proxy(config: ProjectConfig, asset: MediaAsset) -> Validated
 
 
 def validated_video_proxy(config: ProjectConfig, asset: MediaAsset) -> Path:
-    manifest_path = config.artifact_root / "proxies" / f"{asset.asset_id}.manifest.json"
-    expected_path = config.artifact_root / "proxies" / f"{asset.asset_id}.mp4"
+    manifest_path = artifact_path(
+        config.artifact_root, "proxies", f"{asset.asset_id}.manifest.json"
+    )
+    expected_path = artifact_path(config.artifact_root, "proxies", f"{asset.asset_id}.mp4")
     try:
         manifest = ProxyManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, ValidationError) as exc:

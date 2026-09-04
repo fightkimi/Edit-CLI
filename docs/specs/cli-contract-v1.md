@@ -182,7 +182,8 @@ interview-edit render --project PATH --cutlist PATH
 ```
 
 - Re-runs complete cut-list validation before selecting a full timeline, act, or item.
-- Preview reads checksum-valid M2 proxies; master reads indexed immutable sources.
+- Preview reads checksum-valid M2 proxies; master reads indexed immutable sources and enforces an
+  optional full source hash when the index contains one.
 - Keeps primary audio continuous across synchronized camera cuts and full-frame visual overlays.
 - Applies declared title/subtitle rasters and paired fade transitions.
 - `--resume` reuses only complete item cache objects with matching input/profile/edit hashes.
@@ -190,6 +191,8 @@ interview-edit render --project PATH --cutlist PATH
   real tiny encode and falls back to `libx264`.
 - Publishes output atomically inside the artifact root. Different existing content requires
   `--force`; failure or interruption preserves the previous output.
+- Rechecks referenced source revisions and current sync identity before publication; stale evidence
+  cannot render.
 - Writes one terminal run manifest with input fingerprints, cache decisions, environment, exact
   FFmpeg arguments/version, encoder, output checksum, and success/failure/interruption state.
 

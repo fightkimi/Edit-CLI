@@ -32,7 +32,7 @@ from interview_edit.models.transcript import (
     TranscriptSegment,
     TranscriptWord,
 )
-from interview_edit.project.layout import atomic_write_text
+from interview_edit.project.layout import artifact_path, atomic_write_text
 from interview_edit.proxy.service import validate_source_revision
 
 _TRANSCRIPTION_SCHEMA = "transcription-v1"
@@ -79,7 +79,7 @@ def _utc_now() -> str:
 
 
 def _paths(config: ProjectConfig, asset_id: str) -> _TranscriptPaths:
-    root = config.artifact_root / "transcripts" / asset_id
+    root = artifact_path(config.artifact_root, "transcripts", asset_id)
     return _TranscriptPaths(
         root=root,
         raw_jsonl=root / "raw.jsonl",
@@ -179,12 +179,23 @@ def _model_revision(resolved_model: str) -> dict[str, Any]:
     if not path.is_dir():
         return {"identity": resolved_model}
     revision: list[dict[str, Any]] = []
-    for name in ("config.json", "weights.safetensors", "weights.npz"):
-        candidate = path / name
-        if candidate.is_file():
-            stat = candidate.stat()
-            revision.append({"name": name, "size": stat.st_size, "mtime_ns": stat.st_mtime_ns})
-    return {"path": str(path), "files": revision}
+    try:
+        for candidate in sorted(path.rglob("*")):
+            if candidate.is_file():
+                revision.append(
+                    {
+                        "name": candidate.relative_to(path).as_posix(),
+                        "size": candidate.stat().st_size,
+                        "sha256": sha256_file(candidate),
+                    }
+                )
+    except OSError as exc:
+        raise PreflightError(
+            "transcription_model_unreadable",
+            "The resolved local transcription model could not be fingerprinted.",
+            details={"path": str(path), "reason": str(exc)},
+        ) from exc
+    return {"path": str(path.resolve(strict=False)), "files": revision}
 
 
 def _cache_key(
@@ -192,6 +203,7 @@ def _cache_key(
     *,
     audio_sha256: str,
     transcriber: Transcriber,
+    model_revision: dict[str, Any],
     language: str,
     chunk_duration_seconds: int,
 ) -> tuple[str, dict[str, Any]]:
@@ -209,7 +221,7 @@ def _cache_key(
         "backend": transcriber.backend,
         "backend_version": transcriber.backend_version,
         "model": transcriber.requested_model,
-        "model_revision": _model_revision(transcriber.resolved_model),
+        "model_revision": model_revision,
         "device": transcriber.device,
         "language": language,
         "parameters": parameters,
@@ -563,6 +575,11 @@ def transcribe_assets(
             model=request.model,
             device=request.device,
         )
+    model_revision = (
+        _model_revision(selected_transcriber.resolved_model)
+        if selected_transcriber is not None and not request.dry_run
+        else None
+    )
 
     built: list[str] = []
     cached: list[str] = []
@@ -577,10 +594,12 @@ def transcribe_assets(
             planned.append(asset.asset_id)
             continue
         assert selected_transcriber is not None
+        assert model_revision is not None
         cache_key, parameters = _cache_key(
             asset,
             audio_sha256=audio.sha256,
             transcriber=selected_transcriber,
+            model_revision=model_revision,
             language=language,
             chunk_duration_seconds=request.config.transcription.chunk_duration_seconds,
         )

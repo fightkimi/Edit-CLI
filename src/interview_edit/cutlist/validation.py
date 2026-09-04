@@ -6,10 +6,8 @@ from pathlib import Path
 from typing import Protocol
 
 from PIL import Image
-from pydantic import ValidationError
 
 from interview_edit.adapters.artifacts import validated_video_proxy
-from interview_edit.adapters.filesystem import quick_fingerprint
 from interview_edit.config.models import ProjectConfig
 from interview_edit.errors import InterviewEditError
 from interview_edit.ingest.service import read_media_index
@@ -21,9 +19,11 @@ from interview_edit.models.cutlist import (
     TimelineItemKind,
     ValidationIssue,
 )
-from interview_edit.models.media import MediaAsset
+from interview_edit.models.media import MediaAsset, MediaIndex
 from interview_edit.models.sync import SyncReport
 from interview_edit.project.layout import canonical
+from interview_edit.proxy.service import validate_source_revision
+from interview_edit.sync.service import load_current_sync_report
 
 
 def _issue(
@@ -83,34 +83,19 @@ def _current_source(
     *,
     path: str,
 ) -> None:
-    source = canonical(Path(asset.canonical_path))
     try:
-        stat = source.stat()
-        if not source.is_file():
-            raise OSError("not a regular file")
-        current_fingerprint = quick_fingerprint(source)
-    except OSError as exc:
-        _issue(
-            issues,
-            "source_missing",
-            "Indexed source media is missing or unreadable.",
-            path=path,
-            sourcePath=str(source),
-            reason=str(exc),
-        )
-        return
-    if (
-        stat.st_size != asset.size
-        or stat.st_mtime_ns != asset.mtime_ns
-        or current_fingerprint != asset.fingerprint
-    ):
+        validate_source_revision(asset)
+    except InterviewEditError as exc:
+        source = canonical(Path(asset.canonical_path))
         _issue(
             issues,
             "source_index_stale",
-            "Indexed source media changed; run ingest and rebuild dependent artifacts.",
+            "Indexed source media is missing, unreadable, or changed; "
+            "run ingest and rebuild dependent artifacts.",
             path=path,
             sourcePath=str(source),
             assetId=asset.asset_id,
+            reason=exc.message,
         )
 
 
@@ -155,12 +140,10 @@ def _font_for(config: ProjectConfig, cutlist_path: Path, *values: str | None) ->
     return canonical(config.fonts[0]) if config.fonts else None
 
 
-def _sync_report(config: ProjectConfig, take_id: str) -> SyncReport | None:
-    path = config.artifact_root / "sync" / take_id / "sync.json"
-    try:
-        return SyncReport.model_validate_json(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, ValidationError):
-        return None
+def _sync_report(
+    config: ProjectConfig, index: MediaIndex, take_id: str
+) -> SyncReport:
+    return load_current_sync_report(config, index, take_id)
 
 
 class _TimedSpan(Protocol):
@@ -407,15 +390,28 @@ def validate_cutlist(
                             "Primary base camera is not mapped in its take.",
                             path=f"{item_path}.base_camera",
                         )
-                    report = _sync_report(config, source.take_id)
+                    report = None
+                    if index is not None:
+                        try:
+                            report = _sync_report(config, index, source.take_id)
+                        except InterviewEditError as exc:
+                            _issue(
+                                issues,
+                                exc.code,
+                                exc.message,
+                                path=f"{item_path}.camera_cuts",
+                                takeId=source.take_id,
+                                errorDetails=exc.details,
+                            )
                     if report is None:
-                        _issue(
-                            issues,
-                            "sync_report_required",
-                            "Camera cuts require a valid sync report for the take.",
-                            path=f"{item_path}.camera_cuts",
-                            takeId=source.take_id,
-                        )
+                        if index is None:
+                            _issue(
+                                issues,
+                                "sync_report_required",
+                                "Camera cuts require a valid sync report for the take.",
+                                path=f"{item_path}.camera_cuts",
+                                takeId=source.take_id,
+                            )
                     else:
                         report_cameras = {camera.camera_id: camera for camera in report.cameras}
                         for cut_position, cut in enumerate(item.camera_cuts):

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import numpy as np
 import pytest
 from pydantic import ValidationError
@@ -10,7 +13,7 @@ from interview_edit.errors import PreflightError, UsageError
 from interview_edit.models.transcript import CorrectionRule, TranscriptSegment, TranscriptWord
 from interview_edit.sync.analysis import estimate_sync, window_centers_us
 from interview_edit.sync.service import parse_manual_offset
-from interview_edit.transcribe.service import _apply_rules
+from interview_edit.transcribe.service import _apply_rules, _model_revision
 
 
 def test_transcript_times_are_integer_microseconds_and_words_stay_inside_segment() -> None:
@@ -87,6 +90,22 @@ def test_registry_model_miss_requires_authorization_without_download(
         )
 
     assert captured.value.code == "model_download_authorization_required"
+
+
+def test_local_model_revision_changes_when_unlisted_weight_content_changes(
+    tmp_path: Path,
+) -> None:
+    model = tmp_path / "model"
+    model.mkdir()
+    weight = model / "model.bin"
+    weight.write_bytes(b"first")
+    original = weight.stat()
+    before = _model_revision(str(model))
+
+    weight.write_bytes(b"other")
+    os.utime(weight, ns=(original.st_atime_ns, original.st_mtime_ns))
+
+    assert _model_revision(str(model)) != before
 
 
 def test_multi_window_fft_sync_recovers_positive_offset() -> None:

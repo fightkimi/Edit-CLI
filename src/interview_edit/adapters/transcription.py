@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib.metadata
 import importlib.util
 import platform
-import wave
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -218,26 +217,6 @@ class FasterWhisperTranscriber:
         return BackendTranscript(language=str(info.language or language), segments=segments)
 
 
-class MockTranscriber:
-    backend = TranscriptionBackend.MOCK.value
-    backend_version = "1"
-    resolved_model = "mock:deterministic"
-    device = "cpu"
-
-    def __init__(self, *, model: str = "mock") -> None:
-        self.requested_model = model
-
-    def transcribe(self, audio_path: Path, *, language: str) -> BackendTranscript:
-        with wave.open(str(audio_path), "rb") as handle:
-            duration = handle.getnframes() / handle.getframerate()
-        if duration <= 0:
-            return BackendTranscript(language=language, segments=())
-        end = min(duration, 2.0)
-        word = BackendWord(0.0, end, "[mock transcript]", 1.0)
-        segment = BackendSegment(0.0, end, "[mock transcript]", (word,))
-        return BackendTranscript(language=language, segments=(segment,))
-
-
 def create_transcriber(
     config: TranscriptionConfig,
     *,
@@ -264,8 +243,6 @@ def create_transcriber(
                 "transcription_backend_missing",
                 "No supported local transcription backend is installed.",
             )
-    if backend == TranscriptionBackend.MOCK:
-        return MockTranscriber(model=requested_model)
     if backend == TranscriptionBackend.MLX_WHISPER:
         if requested_device not in {"auto", "metal"}:
             raise UsageError(

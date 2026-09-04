@@ -17,7 +17,7 @@ uv run interview-edit --version
 Build and install the base CLI as a standalone tool:
 
 ```bash
-uv build --offline
+uv build
 uv tool install ./dist/interview_edit-0.6.0-py3-none-any.whl
 command -v interview-edit
 interview-edit --version
@@ -103,4 +103,4 @@ uv run mypy src
 uv run pytest
 ```
 
-See the [V1 product requirements](docs/prds/interview-edit-cli-skill-v1.md), [project configuration](docs/specs/project-config-v1.md), [CLI contract](docs/specs/cli-contract-v1.md), [cut-list contract](docs/specs/cutlist-schema-v1.md), [render-run protocol](docs/specs/render-run-v1.md), [QC report protocol](docs/specs/qc-report-v1.md), [frozen-version protocol](docs/specs/version-manifest-v1.md), [media-index protocol](docs/specs/media-index-v1.md), [transcript/sync protocol](docs/specs/transcript-and-sync-v1.md), [M6 plan](docs/plans/m6-skill-and-beta-acceptance.md), [Skill benchmark](docs/research/2026-09-04-interview-edit-skill-benchmark.md), and [ADR 0008](docs/decisions/0008-state-aware-skill-orchestration.md).
+See the [V1 product requirements](docs/prds/interview-edit-cli-skill-v1.md), [project configuration](docs/specs/project-config-v1.md), [CLI contract](docs/specs/cli-contract-v1.md), [cut-list contract](docs/specs/cutlist-schema-v1.md), [render-run protocol](docs/specs/render-run-v1.md), [QC report protocol](docs/specs/qc-report-v1.md), [frozen-version protocol](docs/specs/version-manifest-v1.md), [media-index protocol](docs/specs/media-index-v1.md), [transcript/sync protocol](docs/specs/transcript-and-sync-v1.md), [M6 plan](docs/plans/m6-skill-and-beta-acceptance.md), [V1 release-readiness evidence](docs/tests/v1-release-readiness.md), [Skill benchmark](docs/research/2026-09-04-interview-edit-skill-benchmark.md), [Skill orchestration ADR](docs/decisions/0008-state-aware-skill-orchestration.md), and [artifact/evidence hardening ADR](docs/decisions/0009-artifact-boundaries-and-evidence-freshness.md).

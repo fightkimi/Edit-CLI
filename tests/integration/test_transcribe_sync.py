@@ -12,7 +12,6 @@ from interview_edit.adapters.transcription import (
     BackendSegment,
     BackendTranscript,
     BackendWord,
-    MockTranscriber,
 )
 from interview_edit.cli.app import app
 from interview_edit.config.models import SyncConfig, TranscriptionConfig
@@ -21,8 +20,10 @@ from interview_edit.ingest.service import IngestRequest, ingest_media
 from interview_edit.project.service import InitRequest, initialize_project
 from interview_edit.proxy.service import ProxyRequest, build_proxies
 from interview_edit.sync.service import SyncRequest, sync_take
+from interview_edit.transcribe import service as transcribe_service
 from interview_edit.transcribe.service import TranscribeRequest, transcribe_assets
 from tests.fixtures.media_factory import make_noise_wav, make_video_from_audio, require_media_tools
+from tests.fixtures.transcription import MockTranscriber
 
 runner = CliRunner()
 
@@ -113,9 +114,7 @@ def test_transcription_resume_reuses_completed_chunk(tmp_path: Path) -> None:
     project = _project(tmp_path, media)
     config = project.config.model_copy(
         update={
-            "transcription": TranscriptionConfig(
-                backend="mock", model="mock", chunk_duration_seconds=30
-            )
+            "transcription": TranscriptionConfig(model="mock", chunk_duration_seconds=30)
         }
     )
     indexed = ingest_media(IngestRequest(config=config), runner=SubprocessRunner())
@@ -200,7 +199,9 @@ def test_sync_recovers_offset_and_writes_visual_evidence(tmp_path: Path) -> None
     assert payload["convention"] == "camera_time = reference_time + offset"
 
 
-def test_cli_transcribe_emits_one_json_document(tmp_path: Path) -> None:
+def test_cli_transcribe_emits_one_json_document(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     require_media_tools()
     media = tmp_path / "media"
     make_noise_wav(media / "voice.wav", duration_seconds=3)
@@ -209,11 +210,10 @@ def test_cli_transcribe_emits_one_json_document(tmp_path: Path) -> None:
     build_proxies(
         ProxyRequest(config=project.config, index=indexed.index), runner=SubprocessRunner()
     )
-    config_path = project.config.artifact_root.parent / "interview-edit.yaml"
-    config_data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    config_data["transcription"].update({"backend": "mock", "model": "mock"})
-    config_path.write_text(
-        yaml.safe_dump(config_data, allow_unicode=True, sort_keys=False), encoding="utf-8"
+    monkeypatch.setattr(
+        transcribe_service,
+        "create_transcriber",
+        lambda *_args, **_kwargs: MockTranscriber(),
     )
 
     result = runner.invoke(

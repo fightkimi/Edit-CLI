@@ -23,7 +23,12 @@ from interview_edit.models.version import (
     VersionVerification,
     VersionVerificationIssue,
 )
-from interview_edit.project.layout import atomic_write_text, canonical, is_within
+from interview_edit.project.layout import (
+    artifact_path,
+    atomic_write_text,
+    canonical,
+    is_within,
+)
 from interview_edit.qc.service import canonical_config_sha256, load_render_run
 
 _VERSION_ID = re.compile(r"^v[0-9]{4}$")
@@ -51,7 +56,7 @@ def _utc_now() -> str:
 
 
 def _versions_root(config: ProjectConfig) -> Path:
-    return config.artifact_root / "versions"
+    return artifact_path(config.artifact_root, "versions")
 
 
 def _version_path(config: ProjectConfig, version_id: str) -> Path:
@@ -110,7 +115,7 @@ def load_version(config: ProjectConfig, version_id: str) -> tuple[VersionManifes
 
 def _load_release_reports(config: ProjectConfig, run_id: str) -> list[tuple[QCReport, Path]]:
     reports: list[tuple[QCReport, Path]] = []
-    for path in (config.artifact_root / "qc").glob("qc_*/report.json"):
+    for path in artifact_path(config.artifact_root, "qc").glob("qc_*/report.json"):
         try:
             report = QCReport.model_validate_json(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, ValidationError):
@@ -240,7 +245,7 @@ def _validate_freeze_inputs(
         )
     output_path = canonical(Path(manifest.output.path))
     if (
-        not is_within(output_path, request.config.artifact_root / "renders")
+        not is_within(output_path, artifact_path(request.config.artifact_root, "renders"))
         or not output_path.is_file()
         or output_path.stat().st_size != manifest.output.size
         or sha256_file(output_path) != manifest.output.sha256
@@ -359,7 +364,7 @@ def freeze_version(request: FreezeRequest) -> FreezeResult:
                 details={"path": str(final), "reason": str(exc)},
             ) from exc
         return FreezeResult(manifest=frozen, version_path=final, dry_run=False)
-    except Exception:
+    except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
 

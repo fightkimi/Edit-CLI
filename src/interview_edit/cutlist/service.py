@@ -14,7 +14,7 @@ from interview_edit.ingest.service import read_media_index
 from interview_edit.models.cutlist import Act, CutList, Subtitle, TimelineItem, TimelineItemKind
 from interview_edit.models.media import MediaAsset
 from interview_edit.models.transcript import TranscriptManifest, TranscriptSegment
-from interview_edit.project.layout import atomic_write_text, canonical, is_within
+from interview_edit.project.layout import artifact_path, atomic_write_text, canonical, is_within
 
 
 @dataclass(frozen=True)
@@ -81,7 +81,7 @@ def _read_corrected_transcript(
     config: ProjectConfig,
     asset: MediaAsset,
 ) -> list[TranscriptSegment]:
-    root = config.artifact_root / "transcripts" / asset.asset_id
+    root = artifact_path(config.artifact_root, "transcripts", asset.asset_id)
     path = root / "corrected.jsonl"
     try:
         manifest = TranscriptManifest.model_validate_json(
@@ -128,6 +128,13 @@ def scaffold_cutlist(request: ScaffoldRequest) -> ScaffoldResult:
             "Cut-list output must remain inside the editing project.",
             details={"path": str(output), "projectRoot": str(project_root)},
         )
+    for media_root in request.config.media_roots:
+        if is_within(output, media_root):
+            raise PathSafetyError(
+                "cutlist_output_in_media_root",
+                "Cut-list output must not be written inside a source-media root.",
+                details={"path": str(output), "mediaRoot": str(media_root)},
+            )
     if output.exists() and not request.force:
         raise PathSafetyError(
             "cutlist_output_exists",

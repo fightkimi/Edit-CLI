@@ -7,7 +7,7 @@ import yaml
 from pydantic import ValidationError
 
 from interview_edit.config.loader import load_project_config
-from interview_edit.config.models import PrivacyMode
+from interview_edit.config.models import PrivacyMode, TranscriptionConfig
 from interview_edit.models.cutlist import TimelineSpec
 
 
@@ -51,16 +51,21 @@ def test_environment_overrides_project_and_cli_has_highest_priority(tmp_path: Pa
         environ={
             "INTERVIEW_EDIT_USER_CONFIG": str(user_config),
             "INTERVIEW_EDIT_PRIVACY_MODE": "assisted",
-            "INTERVIEW_EDIT_TRANSCRIPTION__BACKEND": "mock",
+            "INTERVIEW_EDIT_TRANSCRIPTION__BACKEND": "mlx-whisper",
         },
         cli_overrides={"language": "en"},
     )
 
     assert config.privacy_mode == PrivacyMode.ASSISTED
     assert config.language == "en"
-    assert config.transcription.backend.value == "mock"
+    assert config.transcription.backend.value == "mlx-whisper"
     assert config.transcription.model == "base"
     assert config.artifact_root == (project / "artifacts").resolve()
+
+
+def test_public_config_rejects_mock_transcription_backend() -> None:
+    with pytest.raises(ValidationError):
+        TranscriptionConfig(backend="mock")
 
 
 @pytest.mark.parametrize("value", ["25", "0/1", "25/0", "not-a-rate"])

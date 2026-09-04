@@ -85,7 +85,7 @@ The complete field-level contract is frozen in `docs/specs/transcript-and-sync-v
 | Files | Responsibility | Verification |
 |---|---|---|
 | `src/interview_edit/models/transcript.py`, `sync.py` | strict v1 artifacts with integer time | model/unit tests |
-| `src/interview_edit/adapters/transcription.py` | MLX, Faster-Whisper, and mock isolation | adapter tests; host MLX smoke |
+| `src/interview_edit/adapters/transcription.py`, `tests/fixtures/transcription.py` | MLX and Faster-Whisper production adapters; injected deterministic test fake | adapter tests; host MLX smoke |
 | `src/interview_edit/transcribe/service.py` | selection, proxy validation, checkpoints, cache, corrections, SRT | interruption/cache integration tests |
 | `src/interview_edit/sync/analysis.py`, `service.py` | envelope correlation, drift, manual provenance, visual evidence | known-offset/drift tests and FFmpeg integration |
 | `src/interview_edit/config/models.py` | bounded chunk and sync analysis settings | config tests |

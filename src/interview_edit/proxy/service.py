@@ -25,7 +25,7 @@ from interview_edit.models.media import (
     ProxyOutputKind,
     TimeMap,
 )
-from interview_edit.project.layout import atomic_write_text
+from interview_edit.project.layout import artifact_path, atomic_write_text
 
 _PROXY_SCHEMA = "proxy-v1"
 
@@ -116,10 +116,10 @@ def _cache_key(
 
 
 def _paths(config: ProjectConfig, asset: MediaAsset) -> _Paths:
-    proxy_root = config.artifact_root / "proxies"
+    proxy_root = artifact_path(config.artifact_root, "proxies")
     return _Paths(
         video=proxy_root / f"{asset.asset_id}.mp4",
-        audio=config.artifact_root / "audio" / f"{asset.asset_id}.wav",
+        audio=artifact_path(config.artifact_root, "audio", f"{asset.asset_id}.wav"),
         thumbnail=proxy_root / f"{asset.asset_id}.jpg",
         time_map=proxy_root / f"{asset.asset_id}.time-map.json",
         manifest=proxy_root / f"{asset.asset_id}.manifest.json",
@@ -437,7 +437,7 @@ def _build_contact_sheets(
     ffprobe_version: str,
     settings: dict[str, Any],
 ) -> tuple[Path, list[Path]]:
-    root = config.artifact_root / "contact-sheets"
+    root = artifact_path(config.artifact_root, "contact-sheets")
     try:
         root.mkdir(parents=True, exist_ok=True)
         available: list[tuple[MediaAsset, Path]] = []
@@ -594,7 +594,9 @@ def build_proxies(
         )
         built.append(asset_id)
 
-    contact_manifest = request.config.artifact_root / "contact-sheets" / "manifest.json"
+    contact_manifest = artifact_path(
+        request.config.artifact_root, "contact-sheets", "manifest.json"
+    )
     if not request.dry_run:
         if progress is not None:
             progress("Updating contact sheets...")
