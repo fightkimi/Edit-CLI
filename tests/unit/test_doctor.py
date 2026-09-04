@@ -64,6 +64,8 @@ class MissingPillowRunner(FakeRunner):
 def test_doctor_accepts_portable_codecs_and_warns_on_hardware_probe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(service.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(service.platform, "machine", lambda: "arm64")
     monkeypatch.setattr(service, "_module_available", lambda name: name == "mlx_whisper")
     report = service.run_doctor(
         runner=FakeRunner(),
@@ -98,6 +100,8 @@ def test_doctor_returns_dependency_exit_when_media_tools_are_missing(
 def test_auto_transcription_falls_back_when_preferred_backend_is_unusable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(service.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(service.platform, "machine", lambda: "arm64")
     monkeypatch.setattr(service, "_module_available", lambda _name: True)
 
     report = service.run_doctor(
