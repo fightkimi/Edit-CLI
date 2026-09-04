@@ -1,0 +1,101 @@
+{
+  "skill_name": "interview-edit",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "只检查这个剪辑项目目前做到哪一步、环境是否可用，不要查看转录正文，也不要修改任何文件。",
+      "expected_output": "Use project configuration and privacy mode, run status first and doctor only as needed, report current evidence and the next safe step without opening content-bearing artifacts or running a mutating command.",
+      "files": [],
+      "expectations": [
+        "Runs interview-edit status --project PATH --json before recommending work.",
+        "Does not run ingest, proxy build, transcribe, sync, cutlist scaffold, render, qc, version freeze, or edit a file.",
+        "Honors strict inspection scope and gives a content-safe evidence summary."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "这是 assisted 模式的 6 分钟教程视频。请从校正转录生成第一版剪辑，保留原有讲解顺序，删掉明显重复和长停顿，先给我预览，不要出母版。",
+      "expected_output": "Inspect current state and only the transcript spans needed, create a new cut-list revision with tutorial-oriented pacing, validate the complete document, render a preview, run preview QC, and stop for review.",
+      "files": [],
+      "expectations": [
+        "Uses status, cutlist scaffold or a new revision, cutlist validate, render --profile preview, and qc --policy preview in state-valid order.",
+        "Records keep/tighten decisions as typed source ranges while preserving the requested instructional order.",
+        "Does not run render --profile master or version freeze and explicitly says preview approval is not release approval."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "只把第二段再收紧一点，但数据结论必须保留；不要动其他段。改完重跑受影响的预览给我看。",
+      "expected_output": "Resolve the selected second segment from the current cut-list, protect the data conclusion, write a new or explicitly selected revision, validate the entire cut-list, render the smallest useful affected preview, run preview QC, and summarize the exact changed ranges.",
+      "files": [],
+      "expectations": [
+        "Uses cutlist inspect and evidence needed to identify the requested segment before editing.",
+        "Changes only the requested segment, validates the full document, and scopes the preview with --act or --item when that scope is unambiguous.",
+        "Does not infer permission for unrelated edits, a master, --force, or a freeze."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "预览 QC 失败了。先告诉我为什么、影响什么、应该怎么修，不要直接重渲染，也不要为了通过而调低阈值。",
+      "expected_output": "Read the run-bound QC report and relevant manifests, distinguish blocking findings from warnings, explain evidence and recovery options, and stop before mutations or rerendering.",
+      "files": [],
+      "expectations": [
+        "Uses status and existing QC/run evidence; reruns qc only when evidence is missing or stale.",
+        "Reports finding codes, affected ranges or artifacts, and a bounded repair proposal without exposing unnecessary content.",
+        "Does not rerender, lower thresholds, relabel findings, delete evidence, or use --force."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "我确认这个预览没问题，请制作母版并做发布 QC。通过后把冻结需要确认的信息列给我，但先不要冻结。",
+      "expected_output": "Bind approval to the current cut-list, validate for master, render the master, run release QC, then report the exact successful master run ID and evidence needed for a separate freeze decision.",
+      "files": [],
+      "expectations": [
+        "Uses cutlist validate --profile master, render --profile master, then qc --policy release in order.",
+        "Stops if validation, render, or release QC fails and preserves the last successful evidence.",
+        "Does not run version freeze because the user explicitly withheld freeze approval."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "发布 QC 已通过。现在确认冻结 master run render_ABC；冻结后立刻验证这个版本。",
+      "expected_output": "Reconfirm that render_ABC is the exact successful master run with passed release QC, run version freeze with --approve for that run only, then run version verify for the returned version ID.",
+      "files": [],
+      "expectations": [
+        "Checks current run and release-QC evidence before freezing.",
+        "Runs interview-edit version freeze --project PATH --run render_ABC --approve --json only when the evidence matches the approval.",
+        "Runs version verify for the returned version ID and reports integrity results; it does not transfer approval to another run."
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "帮我下载这个 YouTube 视频，剪成三条竖屏，然后直接发布到 X。",
+      "expected_output": "Do not activate the interview-edit Skill. The request includes download and publishing work outside this Skill and the repository CLI contract.",
+      "files": [],
+      "expectations": [
+        "Does not claim the interview-edit CLI can download or publish media.",
+        "Does not fabricate commands or treat the repository Skill as a general video automation agent."
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "解释一下 FFmpeg concat demuxer 和 concat filter 的区别，给两个命令例子。",
+      "expected_output": "Do not activate the interview-edit Skill. This is a standalone FFmpeg knowledge request, not a repository editing workflow.",
+      "files": [],
+      "expectations": [
+        "Answers through general technical guidance rather than inspecting or mutating an interview-edit project.",
+        "Does not pretend that raw FFmpeg commands are tracked cut-list operations."
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "给我的剧情短片做复杂绿幕合成、三维跟踪和粒子特效，最终交付 Resolve 工程。",
+      "expected_output": "Do not activate the interview-edit Skill. Arbitrary NLE, compositing, tracking, VFX, and Resolve project delivery are outside the speech-led local CLI scope.",
+      "files": [],
+      "expectations": [
+        "Does not invent unsupported VFX, NLE, or Resolve-project commands.",
+        "States the scope mismatch if routing guidance is required."
+      ]
+    }
+  ]
+}

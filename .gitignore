@@ -1,0 +1,32 @@
+.DS_Store
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+__pycache__/
+*.py[cod]
+
+# Local editing projects and generated media never belong in this source repo.
+artifacts/
+.interview-edit/
+*.mp4
+*.mov
+*.mkv
+*.wav
+*.aiff
+*.srt
+*.ass
+
+# Reproducible synthetic fixtures are intentional test assets.
+!tests/fixtures/**/*.mp4
+!tests/fixtures/**/*.mov
+!tests/fixtures/**/*.mkv
+!tests/fixtures/**/*.wav
+!tests/fixtures/**/*.aiff
+!tests/fixtures/**/*.srt
+!tests/fixtures/**/*.ass

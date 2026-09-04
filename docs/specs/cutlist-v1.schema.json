@@ -1,0 +1,557 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://guang.tech/schemas/interview-edit/cutlist-v1.schema.json",
+  "$defs": {
+    "Act": {
+      "additionalProperties": false,
+      "properties": {
+        "act_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "title": "Act Id",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/TimelineItem"
+          },
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "act_id"
+      ],
+      "title": "Act",
+      "type": "object"
+    },
+    "CameraCut": {
+      "additionalProperties": false,
+      "properties": {
+        "cut_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "title": "Cut Id",
+          "type": "string"
+        },
+        "camera_id": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Camera Id",
+          "type": "string"
+        },
+        "start_us": {
+          "minimum": 0,
+          "title": "Start Us",
+          "type": "integer"
+        },
+        "duration_us": {
+          "exclusiveMinimum": 0,
+          "title": "Duration Us",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cut_id",
+        "camera_id",
+        "start_us",
+        "duration_us"
+      ],
+      "title": "CameraCut",
+      "type": "object"
+    },
+    "Overlay": {
+      "additionalProperties": false,
+      "properties": {
+        "overlay_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "title": "Overlay Id",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/OverlayKind"
+        },
+        "start_us": {
+          "minimum": 0,
+          "title": "Start Us",
+          "type": "integer"
+        },
+        "duration_us": {
+          "exclusiveMinimum": 0,
+          "title": "Duration Us",
+          "type": "integer"
+        },
+        "source_id": {
+          "anyOf": [
+            {
+              "pattern": "^asset_[a-f0-9]{24}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Id"
+        },
+        "source_in_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source In Us"
+        },
+        "source_out_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Out Us"
+        },
+        "image_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image Path"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        },
+        "font_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font Path"
+        }
+      },
+      "required": [
+        "overlay_id",
+        "kind",
+        "start_us",
+        "duration_us"
+      ],
+      "title": "Overlay",
+      "type": "object"
+    },
+    "OverlayKind": {
+      "enum": [
+        "broll",
+        "still",
+        "title"
+      ],
+      "title": "OverlayKind",
+      "type": "string"
+    },
+    "Subtitle": {
+      "additionalProperties": false,
+      "properties": {
+        "subtitle_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "title": "Subtitle Id",
+          "type": "string"
+        },
+        "start_us": {
+          "minimum": 0,
+          "title": "Start Us",
+          "type": "integer"
+        },
+        "duration_us": {
+          "exclusiveMinimum": 0,
+          "title": "Duration Us",
+          "type": "integer"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "font_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font Path"
+        }
+      },
+      "required": [
+        "subtitle_id",
+        "start_us",
+        "duration_us",
+        "text"
+      ],
+      "title": "Subtitle",
+      "type": "object"
+    },
+    "SubtitlePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "language": {
+          "default": "zh",
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Language",
+          "type": "string"
+        },
+        "safe_area_percent": {
+          "default": 5,
+          "maximum": 25,
+          "minimum": 0,
+          "title": "Safe Area Percent",
+          "type": "integer"
+        }
+      },
+      "title": "SubtitlePolicy",
+      "type": "object"
+    },
+    "TimelineItem": {
+      "additionalProperties": false,
+      "properties": {
+        "item_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "title": "Item Id",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/TimelineItemKind"
+        },
+        "content_role": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Role"
+        },
+        "source_id": {
+          "anyOf": [
+            {
+              "pattern": "^asset_[a-f0-9]{24}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Id"
+        },
+        "source_in_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source In Us"
+        },
+        "source_out_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Out Us"
+        },
+        "timeline_duration_us": {
+          "exclusiveMinimum": 0,
+          "title": "Timeline Duration Us",
+          "type": "integer"
+        },
+        "audio_source": {
+          "anyOf": [
+            {
+              "pattern": "^asset_[a-f0-9]{24}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio Source"
+        },
+        "base_camera": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Camera"
+        },
+        "image_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image Path"
+        },
+        "title_text": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title Text"
+        },
+        "font_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font Path"
+        },
+        "camera_cuts": {
+          "items": {
+            "$ref": "#/$defs/CameraCut"
+          },
+          "title": "Camera Cuts",
+          "type": "array"
+        },
+        "overlays": {
+          "items": {
+            "$ref": "#/$defs/Overlay"
+          },
+          "title": "Overlays",
+          "type": "array"
+        },
+        "subtitles": {
+          "items": {
+            "$ref": "#/$defs/Subtitle"
+          },
+          "title": "Subtitles",
+          "type": "array"
+        },
+        "transition_in": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Transition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "transition_out": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Transition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        }
+      },
+      "required": [
+        "item_id",
+        "kind",
+        "timeline_duration_us"
+      ],
+      "title": "TimelineItem",
+      "type": "object"
+    },
+    "TimelineItemKind": {
+      "enum": [
+        "primary",
+        "broll",
+        "still",
+        "title",
+        "transition"
+      ],
+      "title": "TimelineItemKind",
+      "type": "string"
+    },
+    "TimelineSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "frame_rate": {
+          "default": "25/1",
+          "title": "Frame Rate",
+          "type": "string"
+        },
+        "width": {
+          "default": 1920,
+          "minimum": 2,
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "default": 1080,
+          "minimum": 2,
+          "title": "Height",
+          "type": "integer"
+        }
+      },
+      "title": "TimelineSpec",
+      "type": "object"
+    },
+    "Transition": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/TransitionKind",
+          "default": "fade"
+        },
+        "duration_us": {
+          "exclusiveMinimum": 0,
+          "title": "Duration Us",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "duration_us"
+      ],
+      "title": "Transition",
+      "type": "object"
+    },
+    "TransitionKind": {
+      "enum": [
+        "fade"
+      ],
+      "title": "TransitionKind",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1",
+      "default": "1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "project_id": {
+      "pattern": "^prj_[a-z0-9][a-z0-9_-]{5,63}$",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "timeline": {
+      "$ref": "#/$defs/TimelineSpec"
+    },
+    "acts": {
+      "items": {
+        "$ref": "#/$defs/Act"
+      },
+      "title": "Acts",
+      "type": "array"
+    },
+    "subtitle_policy": {
+      "$ref": "#/$defs/SubtitlePolicy"
+    },
+    "render_profile": {
+      "default": "preview",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "title": "Render Profile",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id"
+  ],
+  "title": "CutList",
+  "type": "object"
+}

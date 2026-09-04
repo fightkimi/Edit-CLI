@@ -1,0 +1,4 @@
+interface:
+  display_name: "Interview Edit"
+  short_description: "Local-first creator video editing workflow"
+  default_prompt: "Use $interview-edit to inspect this local creator-video project, choose the safest evidence-backed next step, and stop at required approval gates."

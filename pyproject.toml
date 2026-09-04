@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "interview-edit"
+version = "0.6.0"
+description = "Local-first, cut-list-driven editing for speech-led creator videos"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=2.0,<3",
+  "Pillow>=11.3,<13",
+  "pydantic>=2.10,<3",
+  "PyYAML>=6.0,<7",
+  "typer>=0.16,<1",
+]
+
+[project.optional-dependencies]
+mlx = [
+  "mlx-whisper==0.4.3; platform_system == 'Darwin' and platform_machine == 'arm64'",
+]
+faster-whisper = [
+  "faster-whisper>=1.2,<2",
+]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.15,<2",
+  "pytest>=8.3,<10",
+  "pytest-cov>=6,<8",
+  "ruff>=0.12,<1",
+  "types-PyYAML>=6.0,<7",
+]
+
+[project.scripts]
+interview-edit = "interview_edit.cli.app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/interview_edit"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["interview_edit"]
+follow_imports_for_stubs = true
+
+[[tool.mypy.overrides]]
+module = ["numpy", "numpy.*"]
+follow_imports = "skip"
