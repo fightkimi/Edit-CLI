@@ -52,7 +52,7 @@ jobs:
           .wheel-smoke/bin/python -c 'import json, subprocess; p = subprocess.run([".wheel-smoke/bin/interview-edit", "doctor", "--json"], capture_output=True, text=True); assert p.returncode == 4, p.stdout + p.stderr; json.loads(p.stdout)'
       - name: Retain distribution packages
         if: matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: interview-edit-dist-python-${{ matrix.python-version }}
           path: dist/
