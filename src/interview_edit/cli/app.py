@@ -50,11 +50,8 @@ class GlobalOptions:
     project: Path | None
     json_output: bool
     quiet: bool
-    verbose: int
-    debug: bool
     dry_run: bool
     force: bool
-    no_input: bool
     no_color: bool
 
 
@@ -102,16 +99,9 @@ def global_options(
     quiet: Annotated[
         bool, typer.Option("--quiet", "-q", help="Suppress nonessential output.")
     ] = False,
-    verbose: Annotated[
-        int, typer.Option("--verbose", "-v", count=True, help="Increase detail.")
-    ] = 0,
-    debug: Annotated[bool, typer.Option("--debug", "-d", help="Show debugging detail.")] = False,
     dry_run: Annotated[bool, typer.Option("--dry-run", "-n", help="Plan without writing.")] = False,
     force: Annotated[
         bool, typer.Option("--force", "-f", help="Allow documented overwrite.")
-    ] = False,
-    no_input: Annotated[
-        bool, typer.Option("--no-input", help="Disable interactive prompts.")
     ] = False,
     no_color: Annotated[bool, typer.Option("--no-color", help="Disable ANSI color.")] = False,
     version: Annotated[
@@ -131,11 +121,8 @@ def global_options(
         project=project,
         json_output=json_output,
         quiet=quiet,
-        verbose=verbose,
-        debug=debug,
         dry_run=dry_run,
         force=force,
-        no_input=no_input,
         no_color=no_color,
     )
 
@@ -309,13 +296,14 @@ def status_command(
     ] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Emit one JSON document.")] = False,
 ) -> None:
-    """Report configuration and concrete artifact presence without changing the project."""
+    """Report artifact presence and validated control evidence without changing the project."""
     options = _options(ctx)
     machine = json_output or options.json_output
     try:
         selected = _selected_project(project, options.project)
         config = load_project_config(selected)
-        status = read_project_status(config)
+        project_root = config_path_for(selected).parent
+        status = read_project_status(config, project_root=project_root)
     except InterviewEditError as error:
         _fail(error, command="status", json_output=machine)
         return
@@ -324,11 +312,11 @@ def status_command(
         f"interview-edit doctor --project {shlex.quote(str(config_path_for(selected).parent))}"
     ]
     project_arg = shlex.quote(str(config_path_for(selected).parent))
-    if status.stages["ingest"]["state"] == "missing":
+    if status.stages["ingest"]["validity"] != "current":
         next_commands.append(f"interview-edit ingest --project {project_arg}")
-    elif status.stages["proxy"]["state"] == "missing":
+    elif status.stages["proxy"]["validity"] != "current":
         next_commands.append(f"interview-edit proxy build --project {project_arg}")
-    elif status.stages["transcribe"]["state"] == "missing":
+    elif status.stages["transcribe"]["validity"] != "current":
         next_commands.append(f"interview-edit transcribe --project {project_arg} --resume")
     else:
         cutlists = sorted(
@@ -336,14 +324,14 @@ def status_command(
         )
         if not cutlists:
             next_commands.append(f"interview-edit cutlist scaffold --project {project_arg}")
-        elif status.stages["render"]["state"] == "missing":
+        elif status.stages["render"]["validity"] != "current":
             next_commands.append(
                 f"interview-edit cutlist validate --project {project_arg} "
                 f"--cutlist {shlex.quote(str(cutlists[-1]))}"
             )
-        elif status.stages["qc"]["state"] == "missing":
+        elif status.stages["qc"]["validity"] != "current":
             next_commands.append(f"interview-edit qc --project {project_arg} --policy preview")
-        elif status.stages["version"]["state"] == "missing":
+        elif status.stages["version"]["validity"] != "current":
             next_commands.append(f"interview-edit version list --project {project_arg}")
     envelope = JsonEnvelope(
         ok=True,
@@ -360,10 +348,18 @@ def status_command(
         f"Artifacts: {status.artifact_root}",
     ]
     if not options.quiet:
-        lines.extend(
-            f"- {name}: {value['state']} ({value['fileCount']} files)"
-            for name, value in status.stages.items()
-        )
+        for name, value in status.stages.items():
+            lines.append(
+                f"- {name}: {value['validity']} ({value['validCount']}/"
+                f"{value['expectedCount']} valid, {value['fileCount']} files)"
+            )
+            latest_run = value.get("latestRun")
+            if isinstance(latest_run, dict):
+                lines.append(
+                    f"  latest run: {latest_run['runId']} ({latest_run['state']}, "
+                    f"{latest_run['completedCount']} completed, "
+                    f"{latest_run['cachedCount']} cached)"
+                )
     emit(envelope, json_output=machine, human_lines=lines)
 
 
@@ -451,6 +447,10 @@ def ingest_command(
             ArtifactReference(kind="proxy-artifact", path=str(path))
             for path in proxy_result.artifacts
         )
+        if proxy_result.run_manifest_path is not None:
+            artifacts.append(
+                ArtifactReference(kind="operation-run", path=str(proxy_result.run_manifest_path))
+            )
     warnings = [
         WarningPayload(code=item.code, message=item.message, details=item.details)
         for item in result.index.warnings
@@ -469,6 +469,7 @@ def ingest_command(
             "cached": proxy_result.cached,
             "planned": proxy_result.planned,
             "skipped": proxy_result.skipped,
+            "runId": proxy_result.run_id,
         }
     project_arg = shlex.quote(str(config_path_for(selected).parent))
     next_commands = (
@@ -548,10 +549,15 @@ def proxy_build_command(
     artifacts = [
         ArtifactReference(kind="proxy-artifact", path=str(path)) for path in result.artifacts
     ]
+    if result.run_manifest_path is not None:
+        artifacts.append(
+            ArtifactReference(kind="operation-run", path=str(result.run_manifest_path))
+        )
     project_arg = shlex.quote(str(config_path_for(selected).parent))
     envelope = JsonEnvelope(
         ok=True,
         command="proxy build",
+        runId=result.run_id,
         data={
             "built": result.built,
             "cached": result.cached,
@@ -639,10 +645,15 @@ def transcribe_command(
     artifacts = [
         ArtifactReference(kind="transcript-artifact", path=str(path)) for path in result.artifacts
     ]
+    if result.run_manifest_path is not None:
+        artifacts.append(
+            ArtifactReference(kind="operation-run", path=str(result.run_manifest_path))
+        )
     project_arg = shlex.quote(str(config_path_for(selected).parent))
     envelope = JsonEnvelope(
         ok=True,
         command="transcribe",
+        runId=result.run_id,
         data={
             "built": result.built,
             "cached": result.cached,
@@ -735,6 +746,10 @@ def sync_command(
     artifacts = [
         ArtifactReference(kind="sync-artifact", path=str(path)) for path in result.artifacts
     ]
+    if result.run_manifest_path is not None:
+        artifacts.append(
+            ArtifactReference(kind="operation-run", path=str(result.run_manifest_path))
+        )
     report_data = result.report.model_dump(mode="json") if result.report is not None else {}
     ok = not result.uncertain_cameras
     error_payload = None
@@ -751,6 +766,7 @@ def sync_command(
     envelope = JsonEnvelope(
         ok=ok,
         command="sync",
+        runId=result.run_id,
         data={
             "takeId": take,
             "reportPath": str(result.report_path),

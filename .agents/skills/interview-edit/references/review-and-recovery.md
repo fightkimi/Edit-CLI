@@ -37,6 +37,10 @@ before freeze. After freeze, immediately verify and report the version ID plus v
 
 ## Failure classification
 
+For proxy, transcription, and sync, inspect the stage's `latestRun` summary and
+`artifacts/logs/<run_id>.json` first. Use the completed/cached counts and stable error code without
+opening content-bearing outputs.
+
 | Exit | Class | Recovery |
 |---:|---|---|
 | 2 | usage/config/schema | correct the explicit input; do not retry unchanged |

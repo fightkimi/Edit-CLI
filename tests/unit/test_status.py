@@ -27,6 +27,9 @@ def test_render_status_ignores_item_caches_and_failed_run_manifests(tmp_path: Pa
     after = read_project_status(config)
 
     assert before.stages["render"]["state"] == "missing"
+    assert before.stages["render"]["validity"] == "missing"
     assert before.stages["render"]["fileCount"] == 0
     assert after.stages["render"]["state"] == "present"
+    assert after.stages["render"]["validity"] == "invalid"
+    assert after.stages["render"]["reasonCodes"] == ["successful_render_required"]
     assert after.stages["render"]["fileCount"] == 1

@@ -113,9 +113,7 @@ def test_transcription_resume_reuses_completed_chunk(tmp_path: Path) -> None:
     make_noise_wav(media / "long.wav", duration_seconds=61)
     project = _project(tmp_path, media)
     config = project.config.model_copy(
-        update={
-            "transcription": TranscriptionConfig(model="mock", chunk_duration_seconds=30)
-        }
+        update={"transcription": TranscriptionConfig(model="mock", chunk_duration_seconds=30)}
     )
     indexed = ingest_media(IngestRequest(config=config), runner=SubprocessRunner())
     build_proxies(ProxyRequest(config=config, index=indexed.index), runner=SubprocessRunner())
@@ -130,12 +128,19 @@ def test_transcription_resume_reuses_completed_chunk(tmp_path: Path) -> None:
     with pytest.raises(KeyboardInterrupt):
         transcribe_assets(request, transcriber=interrupted, runner=SubprocessRunner())
 
+    interrupted_runs = list((config.artifact_root / "logs").glob("transcribe_*.json"))
+    assert len(interrupted_runs) == 1
+    interrupted_manifest = json.loads(interrupted_runs[0].read_text(encoding="utf-8"))
+    assert interrupted_manifest["state"] == "interrupted"
+    assert interrupted_manifest["progress"]["metrics"]["completedChunks"] == 1
     resumed = InterruptSecondChunkTranscriber(interrupt=False)
     result = transcribe_assets(request, transcriber=resumed, runner=SubprocessRunner())
 
     assert result.resumed_chunks == 1
     assert resumed.calls == 2
     assert result.built == [indexed.index.assets[0].asset_id]
+    assert result.run_id is not None
+    assert result.run_manifest_path is not None
 
 
 def test_sync_recovers_offset_and_writes_visual_evidence(tmp_path: Path) -> None:
@@ -231,7 +236,9 @@ def test_cli_transcribe_emits_one_json_document(
     payload = json.loads(result.stdout)
     assert payload["ok"] is True
     assert payload["command"] == "transcribe"
+    assert isinstance(payload["runId"], str)
     assert payload["data"]["built"] == [indexed.index.assets[0].asset_id]
+    assert any(item["kind"] == "operation-run" for item in payload["artifacts"])
     assert len(result.stdout.strip().splitlines()) == 1
 
 
@@ -278,6 +285,9 @@ def test_cli_uncertain_sync_is_nonzero_but_manual_override_succeeds(tmp_path: Pa
     assert uncertain_payload["ok"] is False
     assert uncertain_payload["error"]["code"] == "sync_confidence_insufficient"
     assert Path(uncertain_payload["data"]["reportPath"]).is_file()
+    assert isinstance(uncertain_payload["runId"], str)
+    uncertain_run = project.config.artifact_root / "logs" / f"{uncertain_payload['runId']}.json"
+    assert json.loads(uncertain_run.read_text(encoding="utf-8"))["state"] == "review_required"
 
     manual = runner.invoke(app, [*base_args[:-1], "--manual-offset", "close=125ms", "--json"])
 

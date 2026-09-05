@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="zh-Hans" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="description" content="Interview Edit 0.6.0 私测版安装、项目初始化、素材处理、预览审核与问题反馈指南。">
+  <meta name="color-scheme" content="light dark">
+  <title>Interview Edit · 私测使用指南</title>
+  <style>
+    :root{
+      --blue-50:#eef3ff;--blue-100:#d6e1ff;--blue-600:#1050d0;--blue-700:#0b3fa8;
+      --green-50:#edfbf1;--green-400:#60e080;--green-600:#27a44c;
+      --paper:#fff;--canvas:#f7f8fb;--ink:#101014;--ink-2:#323849;--muted:#6e7588;
+      --rule:#dde1ea;--soft:#f7f8fb;--code:#10131b;--code-fg:#e9edf6;
+      --danger:#dc3e4d;--warning:#c17812;--measure:1180px;
+      --display:"Chakra Petch","Avenir Next","DIN Alternate","PingFang SC",system-ui,sans-serif;
+      --sans:"Inter","SF Pro Text","PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif;
+      --mono:"JetBrains Mono","SFMono-Regular",Menlo,Consolas,monospace;
+      --shadow:0 1px 2px rgba(16,80,208,.08),0 8px 28px rgba(16,20,28,.06);
+    }
+    [data-theme="dark"]{
+      --paper:#101014;--canvas:#0a0d15;--ink:#f7f8fb;--ink-2:#dde1ea;--muted:#9aa1b2;
+      --rule:#323849;--soft:#141823;--code:#07090e;--code-fg:#eef3ff;
+      --blue-50:rgba(16,80,208,.16);--blue-100:rgba(45,88,224,.23);--green-50:rgba(96,224,128,.12);
+      --shadow:0 1px 2px rgba(0,0,0,.5),0 12px 36px rgba(16,80,208,.12);
+    }
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth;background:var(--canvas)}
+    body{margin:0;background:var(--canvas);color:var(--ink);font:15px/1.72 var(--sans)}
+    a{color:inherit;text-underline-offset:3px}
+    button{font:inherit}
+    p,h1,h2,h3,h4,h5,ol,ul,dl,dd{margin-top:0}
+    code{font-family:var(--mono)}
+    .skip-link{position:fixed;z-index:40;left:18px;top:-60px;padding:9px 12px;background:var(--ink);color:var(--paper);font:700 11px/1 var(--mono);text-decoration:none}
+    .skip-link:focus{top:16px}
+    .toolbar{position:fixed;z-index:30;right:18px;top:16px;display:flex;gap:8px}
+    .tool{min-height:34px;padding:7px 12px;border:1px solid var(--rule);background:var(--paper);color:var(--ink-2);font:650 11px/1 var(--mono);cursor:pointer;box-shadow:var(--shadow)}
+    .tool:hover,.tool:focus-visible{border-color:var(--blue-600);color:var(--blue-600);outline:none}
+    .shell{width:min(var(--measure),100%);margin:0 auto;display:grid;grid-template-columns:270px minmax(0,1fr);background:var(--paper);box-shadow:0 0 0 1px var(--rule)}
+    .rail{position:sticky;top:0;height:100vh;padding:28px 22px 44px 28px;border-right:1px solid var(--rule);background:var(--soft);overflow:auto}
+    .brand{display:flex;align-items:center;gap:10px;margin-bottom:22px}
+    .brand-mark{position:relative;width:44px;height:24px;background:var(--blue-600)}
+    .brand-mark::after{content:"";position:absolute;right:-8px;bottom:-5px;width:15px;height:15px;background:var(--green-400);border:3px solid var(--soft)}
+    .brand-name{font:700 15px/1 var(--display);letter-spacing:.06em}
+    .rail-eyebrow,.kicker,.micro,.section-kicker{font:700 10px/1.5 var(--mono);letter-spacing:.11em;text-transform:uppercase;color:var(--blue-600)}
+    .rail-title{font:650 21px/1.35 var(--display);margin-top:12px}
+    .rail-meta{font:500 11px/1.7 var(--mono);color:var(--muted);margin:10px 0 20px}
+    .rail-fig{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--rule);border-left:1px solid var(--rule);margin-bottom:24px}
+    .rf{padding:12px 10px;border-right:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+    .rf b{display:block;font:700 17px/1.2 var(--display);color:var(--blue-600)}
+    .rf span{display:block;margin-top:4px;font-size:10px;color:var(--muted)}
+    nav{border-top:1px solid var(--rule);padding-top:12px}
+    nav a{display:flex;gap:8px;padding:6px 9px;margin-left:-9px;text-decoration:none;color:var(--muted);font-size:12.5px}
+    nav a i{min-width:20px;color:var(--blue-600);font:700 10px/1.8 var(--mono);font-style:normal}
+    nav a:hover,nav a.active{color:var(--ink);background:var(--blue-50)}
+    main{min-width:0;background:var(--paper)}
+    .wrap,.cover-inner{padding-left:54px;padding-right:54px}
+    .cover{position:relative;overflow:hidden;border-top:7px solid var(--blue-600)}
+    .cover::after{content:"";position:absolute;right:0;top:0;border-style:solid;border-width:0 0 110px 110px;border-color:transparent transparent var(--green-400) transparent;opacity:.88}
+    .cover-inner{padding-top:38px;padding-bottom:34px}
+    .cover-top,.cover-foot{display:flex;justify-content:space-between;gap:24px;color:var(--muted);font:600 10px/1.5 var(--mono);letter-spacing:.08em;text-transform:uppercase}
+    .cover-top{padding-right:190px}
+    .edition{padding:6px 10px;border:1px solid var(--ink);color:var(--ink)}
+    .cover-center{padding:34px 0 28px;position:relative;z-index:1}
+    .cover h1{font:700 clamp(36px,5vw,58px)/1.03 var(--display);letter-spacing:-.025em;margin:13px 0 17px;max-width:720px}
+    .cover-deck{font-size:17px;line-height:1.75;max-width:720px;color:var(--ink-2)}
+    .cover-foot{padding-top:17px;border-top:1px solid var(--rule);align-items:flex-end}
+    .cover-foot .scope{max-width:650px;text-transform:none;letter-spacing:0;line-height:1.7}
+    .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid var(--rule);border-left:1px solid var(--rule)}
+    .stat{padding:17px 18px;border-right:1px solid var(--rule);border-bottom:1px solid var(--rule);min-height:104px}
+    .stat b{display:block;font:700 24px/1.15 var(--display)}
+    .stat span{display:block;margin-top:8px;font-size:11.5px;line-height:1.55;color:var(--muted)}
+    .stat.ok{box-shadow:inset 0 4px 0 var(--green-400)}
+    .opening-summary{border-top:8px solid var(--soft);border-bottom:1px solid var(--rule)}
+    .opening-summary .wrap{padding-top:34px;padding-bottom:40px}
+    .opening-summary-head{display:grid;grid-template-columns:150px minmax(0,1fr);gap:24px;margin-bottom:24px}
+    .opening-summary h2{font:650 26px/1.4 var(--display);margin:0 0 8px}
+    .summary-lead{font-size:14px;line-height:1.75;color:var(--muted);max-width:740px;margin:0}
+    .opening-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-left:1px solid var(--rule);border-top:1px solid var(--rule)}
+    .opening-point{padding:18px;border-right:1px solid var(--rule);border-bottom:1px solid var(--rule);min-height:150px}
+    .opening-point .micro{margin-bottom:13px}
+    .opening-point h3{font-size:16px;line-height:1.48;margin:0 0 7px}
+    .opening-point p{font-size:12.5px;line-height:1.7;color:var(--muted);margin:0}
+    .opening-decision{padding:20px 0 4px;border-top:3px solid var(--ink);margin-top:24px}
+    .opening-decision h3{font:650 20px/1.55 var(--display);margin:0 0 8px}
+    .opening-conclusions{list-style:none;counter-reset:summary;margin:14px 0 0;padding:0;max-width:900px;border-top:1px solid var(--rule)}
+    .opening-conclusions li{counter-increment:summary;display:grid;grid-template-columns:30px minmax(0,1fr);gap:10px;padding:10px 0;border-bottom:1px solid var(--rule);font-size:13px;color:var(--ink-2)}
+    .opening-conclusions li::before{content:counter(summary,decimal-leading-zero);font:700 10px/1.8 var(--mono);color:var(--blue-600)}
+    .report-toc{border-top:3px solid var(--ink);border-bottom:1px solid var(--rule)}
+    .report-toc .wrap{padding-top:28px;padding-bottom:36px}
+    .report-toc h2{font:650 22px/1.4 var(--display);margin:0 0 18px}
+    .toc-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--rule);border-left:1px solid var(--rule)}
+    .toc-list li{border-right:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+    .toc-list a{display:grid;grid-template-columns:38px 1fr;column-gap:12px;padding:15px 17px;text-decoration:none;min-height:86px}
+    .toc-list span{grid-row:1/3;font:700 11px/1.5 var(--mono);color:var(--blue-600)}
+    .toc-list strong{font-size:15px;line-height:1.5}
+    .toc-list small{font-size:12px;line-height:1.55;color:var(--muted);margin-top:3px}
+    .method-note{display:grid;grid-template-columns:1fr 2fr;gap:30px;margin-top:22px;padding-top:18px;border-top:1px solid var(--rule)}
+    .method-note p{font-size:12.5px;line-height:1.68;margin:0}
+    .chapter{border-top:8px solid var(--soft);background:var(--paper);scroll-margin-top:10px}
+    .chapter-head .wrap{padding-top:38px;padding-bottom:22px}
+    .chapter-head h2{font:650 28px/1.4 var(--display);letter-spacing:-.015em;margin:0 0 8px}
+    .chapter-head p{font-size:14px;line-height:1.72;max-width:820px;color:var(--muted);margin:0}
+    .chapter-path{margin-top:15px;padding-top:12px;border-top:1px solid var(--rule);font:600 11px/1.65 var(--mono);color:var(--muted)}
+    .chapter-body>.wrap{padding-top:0;padding-bottom:48px}
+    .section{margin:0 0 38px;scroll-margin-top:18px}
+    .section-title{display:grid;grid-template-columns:54px minmax(0,1fr);gap:14px;padding-top:20px;margin-bottom:20px;border-top:1px solid var(--rule)}
+    .section-title .n{font:700 10px/1.5 var(--mono);color:var(--blue-600)}
+    .section-title h3{font:650 20px/1.5 var(--display);margin:0}
+    .prose{max-width:820px;margin-left:68px}
+    .prose p{font-size:14px;line-height:1.78;margin-bottom:12px}
+    .prose .big{font-size:16px;line-height:1.78;font-weight:550}
+    .grid-2,.grid-3{display:grid;gap:12px}
+    .grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+    .card{padding:17px 18px;border:1px solid var(--rule);background:var(--paper)}
+    .card .micro{margin-bottom:11px}
+    .card h4{font-size:16px;line-height:1.5;margin:0 0 7px}
+    .card p{font-size:12.5px;line-height:1.7;color:var(--muted);margin:0}
+    .call{padding:17px 20px;margin:20px 0;border:1px solid var(--rule);border-left:4px solid var(--blue-600);background:var(--blue-50)}
+    .call.ok{border-left-color:var(--green-600);background:var(--green-50)}
+    .call.warn{border-left-color:var(--warning);background:var(--soft)}
+    .call h4{font-size:15px;margin:0 0 6px}.call p{font-size:13.5px;margin:0;max-width:850px}
+    .items{border-top:1px solid var(--rule)}
+    .item{display:grid;grid-template-columns:74px minmax(0,1fr);border-bottom:1px solid var(--rule)}
+    .item .tag{padding:17px 0 17px 17px;font:700 11px/1.5 var(--mono);color:var(--blue-600)}
+    .item .bd{padding:16px 18px 16px 5px}.item h4{font-size:15px;margin:0 0 5px}.item p{font-size:13px;line-height:1.7;color:var(--muted);margin:0}
+    .table-wrap{width:100%;overflow:auto;border-top:1px solid var(--ink)}
+    table{width:100%;border-collapse:collapse;font-size:12.5px;line-height:1.62}
+    th,td{padding:10px 11px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:top}
+    th{font:700 9.5px/1.55 var(--mono);letter-spacing:.05em;color:var(--muted);background:var(--soft)}
+    .chip{display:inline-block;padding:2px 7px;border:1px solid currentColor;font:700 9px/1.4 var(--mono);white-space:nowrap}
+    .chip.go{color:var(--green-600)}.chip.wait{color:var(--warning)}.chip.stop{color:var(--danger)}.chip.info{color:var(--blue-600)}
+    .codebox{position:relative;margin:14px 0 18px;background:var(--code);color:var(--code-fg);border:1px solid #242a3a;overflow:hidden}
+    .code-head{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:8px 10px;border-bottom:1px solid #2d3447;color:#9fa9bc;font:700 9px/1.4 var(--mono);letter-spacing:.07em;text-transform:uppercase}
+    .copy{border:1px solid #46506a;background:transparent;color:#c9d2e3;padding:4px 8px;font:700 9px/1 var(--mono);cursor:pointer}
+    .copy:hover,.copy:focus-visible{border-color:var(--green-400);color:var(--green-400);outline:none}
+    pre{margin:0;padding:15px 17px;overflow:auto;font:12.5px/1.72 var(--mono);tab-size:2}
+    .pipe{list-style:none;counter-reset:steps;margin:0;padding:0;border-top:1px solid var(--rule)}
+    .pipe li{counter-increment:steps;position:relative;padding:13px 18px 13px 52px;border-bottom:1px solid var(--rule);font-size:13.5px}
+    .pipe li::before{content:counter(steps,decimal-leading-zero);position:absolute;left:18px;top:13px;font:700 10px/1.7 var(--mono);color:var(--blue-600)}
+    .pipe li.gate{box-shadow:inset 4px 0 0 var(--green-400);background:var(--green-50)}
+    .conclusion{margin-top:34px;padding:20px 22px;display:grid;grid-template-columns:140px 1fr;gap:24px;border:1px solid var(--rule);border-left:4px solid var(--blue-600);background:var(--soft)}
+    .conclusion .stamp{font:700 10px/1.5 var(--mono);color:var(--blue-600);text-transform:uppercase}
+    .conclusion h3{font:650 18px/1.5 var(--display);margin:0 0 8px}
+    .conclusion p{font-size:13.5px;line-height:1.75;margin:0;color:var(--ink-2)}
+    .decision-line{padding:30px 0 10px;border-top:3px solid var(--ink)}
+    .decision-line h2{font:650 24px/1.48 var(--display);margin:0 0 10px}
+    .decision-line p{font-size:14px;line-height:1.78;max-width:850px}
+    .footnotes{padding:40px 0;border-top:8px solid var(--soft)}
+    .footnotes h2{font:650 22px/1.45 var(--display);margin-bottom:12px}
+    .footnotes p{font-size:12.5px;line-height:1.74;color:var(--muted);max-width:850px}
+    .source-index{columns:2;column-gap:38px;margin-top:20px}
+    .source-index a{display:block;break-inside:avoid;padding:11px 0;border-top:1px solid var(--rule);font-size:12px;line-height:1.55;text-decoration:none}
+    .source-index span{font:700 9px/1 var(--mono);color:var(--blue-600);margin-right:8px}
+    @media(max-width:900px){.shell{grid-template-columns:1fr}.rail{position:relative;height:auto;border-right:0;border-bottom:1px solid var(--rule)}nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.toolbar{position:absolute}.stats{grid-template-columns:1fr 1fr}}
+    @media(max-width:760px){
+      body{background:var(--paper);font-size:14px}.shell{width:100%;box-shadow:none}
+      .wrap,.cover-inner{padding-left:20px;padding-right:20px}
+      .rail{padding:14px 20px 12px}.brand{margin:0;width:calc(100% - 190px)}.rail-eyebrow,.rail-title,.rail-meta,.rail-fig{display:none}nav{display:flex;gap:4px;margin-top:11px;padding-top:8px;overflow-x:auto;scrollbar-width:thin}nav a{flex:0 0 auto;margin:0;padding:6px 8px}.toolbar{right:10px;top:10px}.tool{padding:7px 9px}
+      .cover-inner{padding-top:30px;padding-bottom:24px}.cover::after{border-width:0 0 64px 64px}.cover-top{padding-right:0}.cover-top>div:last-child{display:none}
+      .cover-center{padding:28px 0 20px}.cover h1{font-size:32px;line-height:1.07}.cover-deck{font-size:14px}.cover-foot{display:block}.cover-foot>div:last-child{margin-top:8px}
+      .stats,.opening-grid,.grid-2,.grid-3{grid-template-columns:1fr}.stat{min-height:auto}.opening-point{min-height:auto}
+      .opening-summary .wrap{padding-top:25px;padding-bottom:28px}.opening-summary-head{grid-template-columns:1fr;gap:6px}.opening-summary h2{font-size:21px}
+      .opening-decision h3{font-size:18px}.opening-conclusions li{grid-template-columns:26px 1fr;gap:7px;font-size:12.5px}
+      .report-toc .wrap{padding-top:22px;padding-bottom:28px}.toc-list{grid-template-columns:1fr}.toc-list a{min-height:auto}.method-note{grid-template-columns:1fr;gap:14px}
+      .chapter-head .wrap{padding-top:28px;padding-bottom:18px}.chapter-head h2{font-size:24px}
+      .section-title{grid-template-columns:40px 1fr;gap:8px;padding-top:15px;margin-bottom:15px}.section-title h3{font-size:18px}.prose{margin-left:0}.prose p{font-size:13px}.prose .big{font-size:14.5px}
+      .conclusion{grid-template-columns:1fr;gap:8px;padding:17px}.source-index{columns:1}pre{font-size:11.5px}.item{grid-template-columns:58px minmax(0,1fr)}
+    }
+    @media(max-width:430px){.brand{width:calc(100% - 100px)}.stats{grid-template-columns:1fr}.toolbar .print-label{display:none}}
+    @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+    @media print{body{background:#fff;color:#111}.toolbar,.rail{display:none}.shell{display:block;width:100%;box-shadow:none}.chapter{break-before:page}.chapter,.card,.conclusion,.codebox{break-inside:avoid}[data-theme="dark"]{--paper:#fff;--canvas:#fff;--ink:#111;--ink-2:#333;--muted:#555;--rule:#ccc;--soft:#f6f6f6}}
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#top">跳到正文</a>
+  <div class="toolbar" role="group" aria-label="文档工具">
+    <button class="tool" id="themeBtn" type="button" title="切换浅色、深色或跟随系统">◐ 浅色</button>
+    <button class="tool" id="printBtn" type="button" title="打印或导出 PDF">⌁ <span class="print-label">打印 / PDF</span></button>
+  </div>
+  <div class="shell">
+    <aside class="rail">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">GUANG TECH</span></div>
+      <div class="rail-eyebrow">Private Beta Guide</div>
+      <div class="rail-title">Interview Edit<br>私测使用指南</div>
+      <div class="rail-meta">VERSION 0.6.0<br>BASELINE LOCAL WORKTREE · 2026.09.04</div>
+      <div class="rail-fig">
+        <div class="rf"><b>5 类</b><span>访谈 / 口播 / 教程 / 测评 / Vlog</span></div>
+        <div class="rf"><b>本地</b><span>素材不上传</span></div>
+        <div class="rf"><b>Preview</b><span>先预览后母版</span></div>
+        <div class="rf"><b>108</b><span>当前本地自动化测试</span></div>
+      </div>
+      <nav aria-label="章节导航">
+        <a href="#executive-summary"><i>00</i>先看结论</a>
+        <a href="#chapter-1"><i>01</i>安装准备</a>
+        <a href="#chapter-2"><i>02</i>建立项目</a>
+        <a href="#chapter-3"><i>03</i>用 Codex 剪辑</a>
+        <a href="#chapter-4"><i>04</i>直接使用 CLI</a>
+        <a href="#chapter-5"><i>05</i>审核与交付</a>
+        <a href="#chapter-6"><i>06</i>报错与反馈</a>
+      </nav>
+    </aside>
+
+    <main>
+      <header class="cover" id="top">
+        <div class="cover-inner">
+          <div class="cover-top"><div class="edition">Private Beta · v0.6.0</div><div>Local-first / Preview-first / Reproducible</div></div>
+          <div class="cover-center">
+            <div class="kicker">Interview Edit · 使用说明</div>
+            <h1>从一批本地素材，<br>到一版可审核的剪辑预览</h1>
+            <p class="cover-deck">给第一次使用 Interview Edit 的测试人员。按本文完成安装、环境检查、素材索引、代理、转录、cut-list、预览和质量检查；默认停在预览，不自动生成母版。</p>
+          </div>
+          <div class="cover-foot"><div class="scope">适用范围：语音主导的访谈、口播、教程、测评和 Vlog。当前是私测版命令行工具，不是通用非线性剪辑软件。</div><div>Guide date<br>2026.09.04</div></div>
+        </div>
+        <div class="stats" aria-label="使用原则">
+          <div class="stat ok"><b>本地优先</b><span>原始视频留在本机，CLI 只读源素材。</span></div>
+          <div class="stat"><b>两个目录</b><span>素材目录与剪辑项目目录必须分开。</span></div>
+          <div class="stat"><b>先 Preview</b><span>先审预览与 QC，再单独决定是否输出母版。</span></div>
+          <div class="stat"><b>JSON 留证</b><span>保留命令退出码、run ID 和报告路径，便于反馈。</span></div>
+        </div>
+      </header>
+
+      <section class="opening-summary" id="executive-summary">
+        <div class="wrap">
+          <div class="opening-summary-head">
+            <div class="section-kicker">Executive summary<br>一页看懂</div>
+            <div><h2>可以开始私测，但先确认环境和隐私边界</h2><p class="summary-lead">最短路径是：在 Codex 中打开仓库，提供素材目录和剪辑目标，让项目 Skill 调用 CLI；技术用户也可以完全通过命令行操作。</p></div>
+          </div>
+          <div class="opening-grid">
+            <article class="opening-point"><div class="micro">01 · Position</div><h3>定位：可审核的私测版</h3><p>适合小范围试用和反馈；没有真实素材验收前，不应宣传为成熟生产工具。</p></article>
+            <article class="opening-point"><div class="micro">02 · Device</div><h3>设备：优先 Apple Silicon Mac</h3><p>媒体链路已在 macOS 和 Linux CI 验证；首批体验建议使用 Apple Silicon Mac。</p></article>
+            <article class="opening-point"><div class="micro">03 · Privacy</div><h3>隐私：初始化时必须选择</h3><p><b>strict</b> 不让 Codex 读取正文和画面；<b>assisted</b> 允许按需读取局部转录和证据。</p></article>
+            <article class="opening-point"><div class="micro">04 · Transcription</div><h3>转录：后端和模型另备</h3><p>基础安装不含语音识别运行时和模型。任何依赖或模型下载都要由使用者明确同意。</p></article>
+            <article class="opening-point"><div class="micro">05 · Workflow</div><h3>流程：默认停在预览</h3><p>校验失败绝不渲染；预览通过也不等于允许生成母版、冻结版本或公开发布。</p></article>
+            <article class="opening-point"><div class="micro">06 · Feedback</div><h3>反馈：给证据，不发原片</h3><p>反馈系统、命令、退出码、JSON 错误、run ID 和脱敏路径；不要在未经许可时上传素材。</p></article>
+          </div>
+          <div class="opening-decision">
+            <h3>推荐第一次试用只完成一件事：安全地产出一版预览并给出反馈。</h3>
+            <ol class="opening-conclusions">
+              <li><span><strong>准备：</strong>获得私有仓库权限，安装 uv、Python 3.11+、FFmpeg/FFprobe。</span></li>
+              <li><span><strong>隔离：</strong>原始素材与项目产物放在不同目录，初始化时明确 strict 或 assisted。</span></li>
+              <li><span><strong>处理：</strong>先 doctor，再索引、代理、转录；每一步都阅读退出码与 JSON。</span></li>
+              <li><span><strong>剪辑：</strong>通过 Codex Skill 或手工 cut-list 生成预览，随后运行 preview QC。</span></li>
+              <li><span><strong>停止：</strong>预览审核完成即结束首次私测；母版、冻结和发布都要另行授权。</span></li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <section class="report-toc" id="report-toc">
+        <div class="wrap">
+          <div class="section-kicker">Contents · 使用路径</div>
+          <h2>按六个章节完成第一次试用</h2>
+          <ol class="toc-list">
+            <li><a href="#chapter-1"><span>01</span><strong>安装准备</strong><small>检查设备、依赖、仓库权限和本地转录条件。</small></a></li>
+            <li><a href="#chapter-2"><span>02</span><strong>建立项目</strong><small>分离素材与产物目录，选择隐私模式并运行 doctor。</small></a></li>
+            <li><a href="#chapter-3"><span>03</span><strong>用 Codex 剪辑</strong><small>推荐路径：让项目 Skill 按自然语言目标编排 CLI。</small></a></li>
+            <li><a href="#chapter-4"><span>04</span><strong>直接使用 CLI</strong><small>技术路径：逐条执行索引、代理、转录、cut-list 和预览。</small></a></li>
+            <li><a href="#chapter-5"><span>05</span><strong>审核与交付</strong><small>查看预览和 QC；区分预览、母版、冻结三次决定。</small></a></li>
+            <li><a href="#chapter-6"><span>06</span><strong>报错与反馈</strong><small>根据统一退出码处理问题，提交最小且可复现的反馈。</small></a></li>
+          </ol>
+          <div class="method-note">
+            <div><div class="section-kicker">Recommended · 推荐方式</div><p>非技术使用者优先通过 Codex + 项目 Skill 操作；CLI 是唯一执行内核和事实来源。</p></div>
+            <div><div class="section-kicker">Boundary · 使用边界</div><p>本文命令基于 0.6.0 当前工作区；正式分发前应替换为最终提交。模型安装、真实内容读取、母版渲染、版本冻结和外部发布不会从“继续”或“预览通过”中自动获得授权。</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="chapter" id="chapter-1">
+        <header class="chapter-head"><div class="wrap"><div class="section-kicker">Chapter 01 · 安装准备</div><h2>先把运行环境准备好</h2><p>首批测试建议使用 Apple Silicon Mac；基础安装可以完成除转录外的全部阶段。</p><div class="chapter-path">仓库权限 → uv 与 Python → FFmpeg / FFprobe → 基础安装 → 可选转录</div></div></header>
+        <div class="chapter-body"><div class="wrap">
+          <section class="section">
+            <div class="section-title"><div class="n">01.1</div><h3>开始前清单</h3></div>
+            <div class="table-wrap"><table><thead><tr><th>项目</th><th>要求</th><th>判断</th></tr></thead><tbody>
+              <tr><td>仓库</td><td>已获得 <code>guang-tech/edit-CLI</code> 私有仓库读取权限</td><td><span class="chip go">必需</span></td></tr>
+              <tr><td>系统</td><td>首批推荐 Apple Silicon Mac；Windows / NVIDIA 尚未完成本项目验收</td><td><span class="chip info">推荐</span></td></tr>
+              <tr><td>运行时</td><td>Python 3.11 或更新版本，uv，FFmpeg 与 FFprobe</td><td><span class="chip go">必需</span></td></tr>
+              <tr><td>磁盘</td><td>为代理、转录、缓存、预览和 QC 证据预留空间</td><td><span class="chip go">必需</span></td></tr>
+              <tr><td>转录</td><td>MLX Whisper 或 Faster-Whisper，以及已在本地准备好的模型</td><td><span class="chip wait">按需</span></td></tr>
+            </tbody></table></div>
+          </section>
+          <section class="section">
+            <div class="section-title"><div class="n">01.2</div><h3>安装系统工具</h3></div>
+            <div class="prose"><p class="big">如果 Mac 已安装 Homebrew，可用下面两条命令准备 uv 和 FFmpeg。安装会访问网络；在团队设备上先确认软件安装权限。</p></div>
+            <div class="codebox"><div class="code-head"><span>Terminal · macOS prerequisites</span><button class="copy" type="button">复制</button></div><pre><code>brew install uv ffmpeg
+uv python install 3.11</code></pre></div>
+            <div class="call"><h4>没有 Homebrew？</h4><p>使用团队认可的软件分发方式。uv 官方安装页与 FFmpeg 官方/Homebrew 包页面列在文末；不要从不明镜像下载可执行文件。</p></div>
+          </section>
+          <section class="section">
+            <div class="section-title"><div class="n">01.3</div><h3>克隆并安装基础 CLI</h3></div>
+            <div class="codebox"><div class="code-head"><span>Terminal · repository setup</span><button class="copy" type="button">复制</button></div><pre><code>git clone https://github.com/guang-tech/edit-CLI.git
+cd edit-CLI
+uv sync --locked
+uv run interview-edit --version
+uv run interview-edit --help</code></pre></div>
+            <div class="call ok"><h4>正确结果</h4><p>版本命令显示 <code>0.6.0</code>，帮助中能看到 init、doctor、status、ingest、proxy、transcribe、sync、cutlist、render、qc 和 version。</p></div>
+          </section>
+          <section class="section">
+            <div class="section-title"><div class="n">01.4</div><h3>可选：安装 Apple Silicon 转录后端</h3></div>
+            <div class="prose"><p>只有需要本地语音转录时才安装。下面命令可能下载依赖，但不会自动授予模型下载权限。模型应由维护者预先放入本机缓存或提供本地目录。</p></div>
+            <div class="codebox"><div class="code-head"><span>Terminal · optional MLX backend</span><button class="copy" type="button">复制</button></div><pre><code>uv sync --locked --extra mlx</code></pre></div>
+            <div class="call warn"><h4>本步骤未包含模型文件</h4><p>项目名称或配置中的 <code>tiny</code> 不等于允许下载。没有本地模型时，transcribe 会停止并返回结构化错误。</p></div>
+          </section>
+          <aside class="conclusion"><div class="stamp">Chapter conclusion</div><div><h3>先确认基础 CLI 能启动，再考虑转录模型</h3><p>安装失败时不要绕过 doctor，也不要复制别人机器上的未知环境。基础 CLI 与本地模型是两项独立准备工作。</p></div></aside>
+        </div></div>
+      </section>
+
+      <section class="chapter" id="chapter-2">
+        <header class="chapter-head"><div class="wrap"><div class="section-kicker">Chapter 02 · 建立项目</div><h2>素材与工作产物必须分开</h2><p>源素材是只读输入；索引、代理、转录、渲染和 QC 都写入独立项目目录。</p><div class="chapter-path">建立两个目录 → 放入素材 → 选择隐私 → init → doctor → status</div></div></header>
+        <div class="chapter-body"><div class="wrap">
+          <section class="section">
+            <div class="section-title"><div class="n">02.1</div><h3>准备目录</h3></div>
+            <div class="grid-2">
+              <article class="card"><div class="micro">Read only · 素材目录</div><h4>只放摄像机、录音和 B-roll 原文件</h4><p>项目运行后不要移动、重命名或覆盖这些文件。CLI 会读取并校验，不会把产物写回这里。</p></article>
+              <article class="card"><div class="micro">Writable · 项目目录</div><h4>只放配置与生成产物</h4><p>代理、转录、cut-list、预览、运行清单和 QC 报告都位于这里，可与素材盘分开。</p></article>
+            </div>
+            <div class="codebox"><div class="code-head"><span>Terminal · choose absolute paths</span><button class="copy" type="button">复制</button></div><pre><code>MEDIA="$HOME/Movies/interview-edit-beta/source-media"
+PROJECT="$HOME/Movies/interview-edit-beta/my-first-project"
+mkdir -p "$MEDIA"
+
+# 现在把测试素材放进 $MEDIA；不要把 $PROJECT 建在 $MEDIA 里面。</code></pre></div>
+          </section>
+          <section class="section">
+            <div class="section-title"><div class="n">02.2</div><h3>选择隐私模式</h3></div>
+            <div class="table-wrap"><table><thead><tr><th>模式</th><th>Codex 可以读取</th><th>适合</th><th>代价</th></tr></thead><tbody>
+              <tr><td><b>strict</b></td><td>路径、ID、哈希、时长、状态与统计</td><td>敏感访谈、保密内容</td><td>需要你提供明确剪辑区间，不能让 Codex 基于完整语义选段</td></tr>
+              <tr><td><b>assisted</b></td><td>完成当前判断所需的局部转录、缩略图和 QC 证据</td><td>希望使用自然语言辅助剪辑</td><td>被读取的文本或图片可能进入当前 Codex 会话上下文</td></tr>
+            </tbody></table></div>
+            <div class="call warn"><h4>两种模式都不会授权上传</h4><p>网络转录、素材上传、模型下载和外部发布始终需要单独说明对象、目的和范围。</p></div>
+          </section>
+          <section class="section">
+            <div class="section-title"><div class="n">02.3</div><h3>初始化并检查环境</h3></div>
+            <div class="codebox"><div class="code-head"><span>Terminal · initialize assisted project</span><button class="copy" type="button">复制</button></div><pre><code>uv run interview-edit init \
+  --project "$PROJECT" \
+  --name "第一次私测" \
+  --media-root "$MEDIA" \
+  --privacy assisted \
+  --json
+
+uv run interview-edit doctor --project "$PROJECT" --json
+uv run interview-edit status --project "$PROJECT" --json</code></pre></div>
+            <div class="items">
+              <div class="item"><div class="tag">EXIT 0</div><div class="bd"><h4>环境可继续</h4><p>仍应阅读 warnings；成功只说明没有阻塞条件，不代表剪辑质量已通过。</p></div></div>
+              <div class="item"><div class="tag">EXIT 4</div><div class="bd"><h4>缺少依赖</h4><p>最常见是本地转录后端或模型未准备。基础媒体阶段可能仍可用，但不要直接运行 transcribe。</p></div></div>
+              <div class="item"><div class="tag">EXIT 5</div><div class="bd"><h4>路径或权限不安全</h4><p>停止并修正目录边界或访问权限，不要用更宽权限掩盖问题。</p></div></div>
+            </div>
+          </section>
+          <aside class="conclusion"><div class="stamp">Chapter conclusion</div><div><h3>doctor 是正式入口，不是可跳过的诊断工具</h3><p>把 doctor 的 JSON 保存下来。只有实际检查到的 Python、FFmpeg、FFprobe、编码器、字体、路径和转录条件才能作为当前机器证据。</p></div></aside>
+        </div></div>
+      </section>
+
+      <section class="chapter" id="chapter-3">
+        <header class="chapter-head"><div class="wrap"><div class="section-kicker">Chapter 03 · 用 Codex 剪辑</div><h2>推荐：用自然语言驱动已验证的 CLI</h2><p>Codex Skill 负责理解剪辑目标、检查项目状态和组织命令；真正的媒体处理仍由 CLI 完成。</p><div class="chapter-path">打开仓库 → 提供项目路径 → 说明目标与边界 → Skill 检查状态 → 生成预览 → 人工审核</div></div></header>
+        <div class="chapter-body"><div class="wrap">
+          <section class="section">
+            <div class="section-title"><div class="n">03.1</div><h3>在 Codex 中开始</h3></div>
+            <ol class="pipe">
+              <li>在 Codex 中打开 <code>edit-CLI</code> 仓库，确保项目级 <code>interview-edit</code> Skill 可被发现。</li>
+              <li>授权 Codex 读取素材目录、写入项目目录；不要把素材复制到代码仓库。</li>
+              <li>告诉 Codex 项目绝对路径、视频类型、目标时长、必须保留和禁止出现的内容。</li>
+              <li>明确隐私模式，以及是否允许读取局部转录、缩略图和 QC 证据。</li>
+              <li class="gate">第一次任务明确写“只生成预览，不生成母版，不冻结版本，不下载模型”。</li>
+            </ol>
+          </section>
+          <section class="section">
+            <div class="section-title"><div class="n">03.2</div><h3>可直接复制的首次任务</h3></div>
+            <div class="codebox"><div class="code-head"><span>Codex prompt · assisted mode</span><button class="copy" type="button">复制</button></div><pre><code>请使用仓库中的 interview-edit Skill。
+
+剪辑项目路径：请替换为我的项目绝对路径
+内容类型：访谈 / 口播 / 教程 / 测评 / Vlog
+目标：请写清目标时长、受众和叙事重点
+必须保留：请列出关键观点、步骤或披露信息
+禁止内容：请列出隐私、口误、空镜或不能发布的内容
+
+请先读取配置并运行 status；环境有疑问时再运行 doctor。
+在 assisted 模式下，只读取完成当前判断所需的局部转录和证据，并先告诉我。
+请依次完成索引、代理、已有本地模型条件下的转录、cut-list 校验、预览渲染和 preview QC。
+任何依赖或模型下载都先停下请求许可。
+这次只交付预览与问题清单：不要生成母版，不要冻结版本，不要上传或发布。</code></pre></div>
+          </section>
+          <section class="section">
+            <div class="section-title"><div class="n">03.3</div><h3>不同视频类型要补充什么</h3></div>
+            <div class="table-wrap"><table><thead><tr><th>类型</th><th>应补充的剪辑要求</th><th>优先检查</th></tr></thead><tbody>
+              <tr><td>访谈</td><td>人物主线、问题顺序、不可断章取义的回答</td><td>上下文与说话者含义</td></tr>
+              <tr><td>口播</td><td>开头钩子、核心观点、CTA 是否保留</td><td>节奏与重复表达</td></tr>
+              <tr><td>教程</td><td>先决条件、步骤顺序、屏幕操作或关键画面</td><td>不能因压缩时长破坏步骤依赖</td></tr>
+              <tr><td>测评</td><td>证据、优缺点、商业披露和最终结论</td><td>结论是否仍有证据与限制条件</td></tr>
+              <tr><td>Vlog</td><td>事件顺序、时间跳跃、环境镜头和情绪节点</td><td>时间关系是否自然且明确</td></tr>
+            </tbody></table></div>
+          </section>
+          <section class="section">
+            <div class="section-title"><div class="n">03.4</div><h3>Codex 应交回什么</h3></div>
+            <div class="grid-3">
+              <article class="card"><div class="micro">Edit evidence</div><h4>剪辑版本</h4><p>cut-list 路径、范围、主要保留/删除/重排，以及没有满足的要求。</p></article>
+              <article class="card"><div class="micro">Render evidence</div><h4>预览证据</h4><p>输出路径、时长、run ID、缓存情况与源素材完整性状态。</p></article>
+              <article class="card"><div class="micro">QC evidence</div><h4>质量检查</h4><p>QC 状态、警告、对应片段和建议动作；不能只说“通过”。</p></article>
+            </div>
+          </section>
+          <aside class="conclusion"><div class="stamp">Chapter conclusion</div><div><h3>Skill 负责决策编排，CLI 负责事实与执行</h3><p>若 Codex 提议临时拼接 FFmpeg、跳过 cut-list 校验、降低 QC 阈值或直接修改源视频，应立即停止并反馈。</p></div></aside>
+        </div></div>
+      </section>
+
+      <section class="chapter" id="chapter-4">
+        <header class="chapter-head"><div class="wrap"><div class="section-kicker">Chapter 04 · 直接使用 CLI</div><h2>技术用户可独立跑完整预览链路</h2><p>下面每条命令都会输出一个 JSON 文档；不要忽略非零退出码，也不要把“产物存在”误认为命令成功。</p><div class="chapter-path">ingest → proxy → transcribe → cutlist → validate → render preview → qc preview</div></div></header>
+        <div class="chapter-body"><div class="wrap">
+          <section class="section">
+            <div class="section-title"><div class="n">04.1</div><h3>索引素材并生成代理</h3></div>
+            <div class="codebox"><div class="code-head"><span>Terminal · ingest and proxy</span><button class="copy" type="button">复制</button></div><pre><code>uv run interview-edit ingest \
+  --project "$PROJECT" \
+  --full-hash \
+  --json
+
+uv run interview-edit proxy build \
+  --project "$PROJECT" \
+  --resume \
+  --json
+
+uv run interview-edit status --project "$PROJECT" --json</code></pre></div>
+            <div class="call ok"><h4>为什么首次建议 full-hash</h4><p>它会记录完整源文件 SHA-256，便于私测结束时证明原片未变化。大素材会增加首次扫描时间。</p></div>
+          </section>
+          <section class="section">
+            <div class="section-title"><div class="n">04.2</div><h3>运行本地转录</h3></div>
+            <div class="prose"><p>只有 doctor 已识别本地后端和模型时执行。<code>--resume</code> 会复用校验有效的分块结果；不要用 <code>--force</code> 作为默认选项。</p></div>
+            <div class="codebox"><div class="code-head"><span>Terminal · local transcription</span><button class="copy" type="button">复制</button></div><pre><code>uv run interview-edit transcribe \
+  --project "$PROJECT" \
+  --language zh \
+  --resume \
+  --json</code></pre></div>
+            <div class="call warn"><h4>退出 3 或 4 时不要原样重试</h4><p>先读 JSON 中的 error.code。模型名缺失、本地模型不存在或后端未安装，都需要修复实际条件，而不是连续重跑。</p></div>
+          </section>
+          <section class="section">
+            <div class="section-title"><div class="n">04.3</div><h3>建立 cut-list</h3></div>
+            <div class="prose"><p>从 ingest 返回的索引路径打开 <code>media-index.json</code>，找到准备作为主讲素材的 <code>asset_id</code>。有校正转录后，用它生成按时间顺序的初始骨架。</p></div>
+            <div class="codebox"><div class="code-head"><span>Terminal · transcript scaffold</span><button class="copy" type="button">复制</button></div><pre><code>ASSET_ID="asset_请替换为媒体索引中的实际ID"
+
+uv run interview-edit cutlist scaffold \
+  --project "$PROJECT" \
+  --asset "$ASSET_ID" \
+  --json</code></pre></div>
+            <div class="call"><h4>scaffold 不是自动成片</h4><p>它只把校正后的转录分段转换为确定性时间骨架，不会自动判断叙事优先级。应在 Codex 辅助或人工编辑后再校验。</p></div>
+          </section>
+          <section class="section">
+            <div class="section-title"><div class="n">04.4</div><h3>校验、渲染预览并做 QC</h3></div>
+            <div class="codebox"><div class="code-head"><span>Terminal · preview gate</span><button class="copy" type="button">复制</button></div><pre><code>CUTLIST="$PROJECT/cutlists/revisions/cutlist-v001.yaml"
+
+uv run interview-edit cutlist validate \
+  --project "$PROJECT" \
+  --cutlist "$CUTLIST" \
+  --profile preview \
+  --json
+
+uv run interview-edit render \
+  --project "$PROJECT" \
+  --cutlist "$CUTLIST" \
+  --profile preview \
+  --resume \
+  --json
+
+uv run interview-edit qc \
+  --project "$PROJECT" \
+  --policy preview \
+  --json</code></pre></div>
+            <div class="call ok"><h4>首次 CLI 私测在这里结束</h4><p>打开 render 返回的 outputPath 观看预览，再结合 QC 报告记录问题。preview QC 的 warning 需要人工判断，不能因为退出码为 0 就自动忽略。</p></div>
+          </section>
+          <section class="section">
+            <div class="section-title"><div class="n">04.5</div><h3>多机位素材的附加步骤</h3></div>
+            <div class="prose"><p>先用 camera-map 在 ingest 时为每个文件标记 <code>camera_id</code> 和 <code>take_id</code>，再以一台机位为时间零点进行同步。低置信度结果需要人工审阅，不能静默接受。</p></div>
+            <div class="codebox"><div class="code-head"><span>Terminal · camera sync</span><button class="copy" type="button">复制</button></div><pre><code>uv run interview-edit sync \
+  --project "$PROJECT" \
+  --take take-01 \
+  --reference-camera wide \
+  --visual-check \
+  --json</code></pre></div>
+          </section>
+          <aside class="conclusion"><div class="stamp">Chapter conclusion</div><div><h3>顺序不可随意跳过：每一层都依赖上一层的当前证据</h3><p>源文件或配置变化后，旧代理、转录、同步、cut-list 或 QC 可能失效。继续工作前先看 status 的 validity 与 reasonCodes；实际缓存复用仍由后续命令按完整缓存键校验。</p></div></aside>
+        </div></div>
+      </section>
+
+      <section class="chapter" id="chapter-5">
+        <header class="chapter-head"><div class="wrap"><div class="section-kicker">Chapter 05 · 审核与交付</div><h2>预览、母版与冻结是三次不同决定</h2><p>首次私测默认只交付预览。后续动作必须绑定准确的 cut-list、render run 和 QC 证据。</p><div class="chapter-path">观看预览 → 阅读 preview QC → 修改并重跑 → 明确批准母版 → release QC → 明确批准冻结</div></div></header>
+        <div class="chapter-body"><div class="wrap">
+          <section class="section">
+            <div class="section-title"><div class="n">05.1</div><h3>预览审核清单</h3></div>
+            <div class="grid-2">
+              <article class="card"><div class="micro">Editorial</div><h4>内容与叙事</h4><p>是否断章取义；教程顺序是否正确；测评证据与披露是否保留；Vlog 时间关系是否清楚。</p></article>
+              <article class="card"><div class="micro">Pacing</div><h4>节奏与连续性</h4><p>重复表达、长停顿和跳剪是否合理；机位切换、B-roll 和转场是否遮挡重要信息。</p></article>
+              <article class="card"><div class="micro">Text</div><h4>字幕与图文</h4><p>人名、术语、混合中英文、断句、字体缺字、安全区和标题时长是否正确。</p></article>
+              <article class="card"><div class="micro">Technical</div><h4>声音与画面</h4><p>检查黑场、静音、音量、峰值、时长差、画幅、帧率和每个切点附近的证据图。</p></article>
+            </div>
+          </section>
+          <section class="section">
+            <div class="section-title"><div class="n">05.2</div><h3>三道授权门</h3></div>
+            <div class="table-wrap"><table><thead><tr><th>动作</th><th>必须先有</th><th>本次授权不包含</th></tr></thead><tbody>
+              <tr><td><span class="chip go">预览</span></td><td>当前代理与通过校验的 cut-list</td><td>母版、冻结、上传、发布</td></tr>
+              <tr><td><span class="chip wait">母版</span></td><td>人工审核过的预览/QC，以及准确 cut-list 版本</td><td>冻结、上传、发布</td></tr>
+              <tr><td><span class="chip stop">冻结</span></td><td>准确 master run、通过的 release QC 和再次明确批准</td><td>公开分发或替代另一个 run</td></tr>
+            </tbody></table></div>
+            <div class="call warn"><h4>不要把“预览没问题”解释成发布授权</h4><p>母版会使用原始素材并执行正式音频处理；冻结会创建不可覆盖的版本证据。两者都不是首次私测的默认步骤。</p></div>
+          </section>
+          <section class="section">
+            <div class="section-title"><div class="n">05.3</div><h3>确有授权时的正式链路</h3></div>
+            <div class="prose"><p>下列命令只用于已经明确批准的准确版本。把实际 master run ID 填入 <code>MASTER_RUN</code>，release QC 通过后再次确认，才执行 freeze。</p></div>
+            <div class="codebox"><div class="code-head"><span>Terminal · authorized release only</span><button class="copy" type="button">复制</button></div><pre><code>uv run interview-edit cutlist validate \
+  --project "$PROJECT" --cutlist "$CUTLIST" --profile master --json
+
+uv run interview-edit render \
+  --project "$PROJECT" --cutlist "$CUTLIST" --profile master --resume --json
+
+MASTER_RUN="render_请替换为实际runID"
+uv run interview-edit qc \
+  --project "$PROJECT" --run "$MASTER_RUN" --policy release --json
+
+# release QC 通过并再次获得冻结授权后，才运行：
+uv run interview-edit version freeze \
+  --project "$PROJECT" --run "$MASTER_RUN" --approve --json</code></pre></div>
+          </section>
+          <aside class="conclusion"><div class="stamp">Chapter conclusion</div><div><h3>交付的是证据链，不只是一个 MP4</h3><p>预览或母版都应能对应到 cut-list、配置、run manifest、输出哈希和 QC 报告。没有这些绑定关系的文件不能作为可复现交付。</p></div></aside>
+        </div></div>
+      </section>
+
+      <section class="chapter" id="chapter-6">
+        <header class="chapter-head"><div class="wrap"><div class="section-kicker">Chapter 06 · 报错与反馈</div><h2>根据退出码处理，不要重复碰运气</h2><p>失败时保留 JSON 和已生成的有效证据。修正真实原因后再运行，不删除缓存来制造“干净结果”。</p><div class="chapter-path">退出码 → error.code → 对应输入或环境 → 一次有依据的重试 → 最小反馈包</div></div></header>
+        <div class="chapter-body"><div class="wrap">
+          <section class="section">
+            <div class="section-title"><div class="n">06.1</div><h3>退出码速查</h3></div>
+            <div class="table-wrap"><table><thead><tr><th>退出码</th><th>含义</th><th>正确处理</th></tr></thead><tbody>
+              <tr><td><b>0</b></td><td>命令成功</td><td>继续阅读 warnings 和生成的证据，不代表内容审美已通过</td></tr>
+              <tr><td><b>1</b></td><td>一般运行错误</td><td>先看 status.latestRun 与 artifacts/logs 下的运行清单；只在有明确变化时重试一次</td></tr>
+              <tr><td><b>2</b></td><td>参数、配置或结构错误</td><td>修正准确参数或 YAML/JSON，不能原样重试</td></tr>
+              <tr><td><b>3</b></td><td>预检、cut-list 校验、同步置信度或 QC 失败</td><td>阅读 issues，修正输入并生成新的证据</td></tr>
+              <tr><td><b>4</b></td><td>缺少外部依赖</td><td>运行 doctor；安装依赖或模型前先获得许可</td></tr>
+              <tr><td><b>5</b></td><td>路径或权限边界失败</td><td>停止并修正目录/权限，不扩大访问范围绕过检查</td></tr>
+              <tr><td><b>130</b></td><td>用户中断</td><td>保留终止清单；仅对支持 resume 的阶段恢复</td></tr>
+            </tbody></table></div>
+          </section>
+          <section class="section">
+            <div class="section-title"><div class="n">06.2</div><h3>反馈模板</h3></div>
+            <div class="codebox"><div class="code-head"><span>Issue report · redact private content</span><button class="copy" type="button">复制</button></div><pre><code>问题标题：
+系统与芯片：
+Interview Edit 版本：0.6.0
+使用方式：Codex Skill / 直接 CLI
+内容类型：访谈 / 口播 / 教程 / 测评 / Vlog
+隐私模式：strict / assisted
+
+执行阶段：doctor / ingest / proxy / transcribe / sync / cutlist / render / qc
+实际命令：
+退出码：
+error.code：
+run ID 或报告 ID：
+脱敏后的 JSON 与路径：
+
+预期发生：
+实际发生：
+是否可以稳定复现：
+源素材 SHA-256 是否变化：
+
+没有附上：原始视频、完整转录、密钥或其他私人内容</code></pre></div>
+          </section>
+          <section class="section">
+            <div class="section-title"><div class="n">06.3</div><h3>首轮私测的完成标准</h3></div>
+            <div class="items">
+              <div class="item"><div class="tag">01</div><div class="bd"><h4>环境事实清楚</h4><p>doctor 的通过项、警告和阻塞项已保存，没有把缺失依赖描述成已安装。</p></div></div>
+              <div class="item"><div class="tag">02</div><div class="bd"><h4>源素材未变化</h4><p>首次 full-hash 与流程后的源文件身份一致；所有生成文件位于 artifact root。</p></div></div>
+              <div class="item"><div class="tag">03</div><div class="bd"><h4>预览可观看</h4><p>cut-list 校验通过，预览绑定成功 run，人工看过关键内容和时间点。</p></div></div>
+              <div class="item"><div class="tag">04</div><div class="bd"><h4>QC 已阅读</h4><p>已区分技术失败、内容 warning 与需要人工判断的问题，并记录下一步。</p></div></div>
+              <div class="item"><div class="tag">05</div><div class="bd"><h4>反馈可复现</h4><p>反馈包含版本、平台、阶段、退出码、error.code 和脱敏证据，不依赖口头描述。</p></div></div>
+            </div>
+          </section>
+          <div class="decision-line">
+            <div class="section-kicker">Final judgment · 最终判断</div>
+            <h2>第一次交给他人使用，目标不是“直接出片”，而是完成一条安全、可复现、可反馈的预览链路。</h2>
+            <p>只要测试者能在自己的机器上通过 doctor、保持源素材不变、生成通过校验的预览、阅读 preview QC，并提交可复现反馈，这次私测就有效。真实转录质量、长视频性能、生产编码格式、母版与公开分发需要后续独立验收。</p>
+          </div>
+        </div></div>
+      </section>
+
+      <footer class="footnotes" id="sources">
+        <div class="wrap">
+          <div class="section-kicker">Sources & boundary · 来源与边界</div>
+          <h2>本文以实际仓库合同与官方安装渠道为准</h2>
+          <p>产品命令、退出码、隐私模式和授权边界来自当前仓库的 CLI 合同、项目配置规范与 Skill 参考。安装入口链接到官方页面。文档不代表真实素材、所有操作系统或所有转录模型已经完成生产验收。</p>
+          <div class="source-index">
+            <a href="https://github.com/guang-tech/edit-CLI"><span>REPO</span>Interview Edit 私有仓库</a>
+            <a href="https://github.com/guang-tech/edit-CLI/actions/runs/33840279819"><span>CI</span>0.6.0 前序基线的双版本验证</a>
+            <a href="https://docs.astral.sh/uv/getting-started/installation/"><span>OFFICIAL</span>uv 官方安装说明</a>
+            <a href="https://formulae.brew.sh/formula/ffmpeg.html"><span>OFFICIAL</span>Homebrew FFmpeg 包说明</a>
+            <a href="../specs/cli-contract-v1.md"><span>LOCAL</span>CLI contract v1</a>
+            <a href="../tests/real-media-beta-checklist.md"><span>LOCAL</span>真实素材 Beta 接入清单</a>
+          </div>
+        </div>
+      </footer>
+    </main>
+  </div>
+  <script>
+    (function(){
+      var root=document.documentElement;
+      var themeBtn=document.getElementById("themeBtn");
+      var printBtn=document.getElementById("printBtn");
+      var labels={light:"◐ 浅色",dark:"◑ 深色",system:"◒ 跟随系统"};
+      function applyTheme(value){
+        if(value==="system"){root.removeAttribute("data-theme");}
+        else{root.setAttribute("data-theme",value);}
+        themeBtn.textContent=labels[value];
+        themeBtn.dataset.mode=value;
+        try{localStorage.setItem("interview-edit-guide-theme",value);}catch(error){}
+      }
+      var saved="light";
+      try{saved=localStorage.getItem("interview-edit-guide-theme")||"light";}catch(error){}
+      if(!labels[saved]){saved="light";}
+      applyTheme(saved);
+      themeBtn.addEventListener("click",function(){
+        var current=themeBtn.dataset.mode||"light";
+        applyTheme(current==="light"?"dark":current==="dark"?"system":"light");
+      });
+      printBtn.addEventListener("click",function(){window.print();});
+
+      document.querySelectorAll(".copy").forEach(function(button){
+        button.addEventListener("click",function(){
+          var code=button.closest(".codebox").querySelector("code").textContent;
+          function done(){button.textContent="已复制";window.setTimeout(function(){button.textContent="复制";},1400);}
+          function fallback(){
+            var area=document.createElement("textarea");
+            area.value=code;area.setAttribute("readonly","");area.style.position="fixed";area.style.opacity="0";
+            document.body.appendChild(area);area.select();
+            try{document.execCommand("copy");done();}catch(error){}
+            document.body.removeChild(area);
+          }
+          if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(code).then(done).catch(fallback);}
+          else{fallback();}
+        });
+      });
+
+      var links=Array.from(document.querySelectorAll("nav a"));
+      var sections=links.map(function(link){return document.querySelector(link.getAttribute("href"));}).filter(Boolean);
+      if("IntersectionObserver" in window){
+        var observer=new IntersectionObserver(function(entries){
+          entries.forEach(function(entry){
+            if(entry.isIntersecting){links.forEach(function(link){var active=link.getAttribute("href")==="#"+entry.target.id;link.classList.toggle("active",active);if(active){link.setAttribute("aria-current","location");}else{link.removeAttribute("aria-current");}});}
+          });
+        },{rootMargin:"-18% 0px -68% 0px",threshold:0});
+        sections.forEach(function(section){observer.observe(section);});
+      }
+    })();
+  </script>
+</body>
+</html>

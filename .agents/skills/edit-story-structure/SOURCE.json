@@ -1,0 +1,9 @@
+{
+  "repository": "affaan-m/everything-claude-code",
+  "commit": "e04ea0b9cc8248686edf5ac751cadff550e162b8",
+  "path": "skills/video-editing/SKILL.md",
+  "url": "https://github.com/affaan-m/everything-claude-code/blob/e04ea0b9cc8248686edf5ac751cadff550e162b8/skills/video-editing/SKILL.md",
+  "license": "MIT",
+  "integration": "project-specific adaptation; no upstream executables",
+  "upstream_skill_sha256": "828d210fa227d83dfdc234f89e39b0b2a5ce4883494e3a5049acea754b0986cc"
+}

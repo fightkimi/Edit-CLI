@@ -67,10 +67,17 @@ def _cached_snapshot(repo_id: str) -> Path | None:
         return None
 
 
-def _resolve_model(
-    *, backend: TranscriptionBackend, model: str, source: ModelSource, download_policy: str
+def resolve_model(
+    *,
+    backend: TranscriptionBackend,
+    model: str,
+    source: ModelSource,
+    download_policy: str,
+    base_dir: Path | None = None,
 ) -> str:
     candidate = Path(model).expanduser()
+    if source == ModelSource.LOCAL and not candidate.is_absolute() and base_dir is not None:
+        candidate = base_dir / candidate
     if candidate.exists():
         if not candidate.is_dir():
             raise PreflightError(
@@ -222,6 +229,7 @@ def create_transcriber(
     *,
     model: str | None = None,
     device: str | None = None,
+    model_base: Path | None = None,
 ) -> Transcriber:
     requested_model = model or config.model
     requested_device = device or config.device
@@ -252,11 +260,12 @@ def create_transcriber(
             )
         if importlib.util.find_spec("mlx_whisper") is None:
             raise DependencyError("mlx_whisper_missing", "MLX Whisper is not installed.")
-        resolved = _resolve_model(
+        resolved = resolve_model(
             backend=backend,
             model=requested_model,
             source=config.model_source,
             download_policy=config.download_policy,
+            base_dir=model_base,
         )
         return MlxWhisperTranscriber(model=requested_model, resolved_model=resolved, device="metal")
     if requested_device == "metal":
@@ -270,11 +279,12 @@ def create_transcriber(
             "faster_whisper_missing",
             "Faster-Whisper is not installed; install the faster-whisper extra explicitly.",
         )
-    resolved = _resolve_model(
+    resolved = resolve_model(
         backend=backend,
         model=requested_model,
         source=config.model_source,
         download_policy=config.download_policy,
+        base_dir=model_base,
     )
     return FasterWhisperTranscriber(
         model=requested_model,

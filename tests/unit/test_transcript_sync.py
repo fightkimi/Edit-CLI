@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -9,7 +10,7 @@ from pydantic import ValidationError
 
 from interview_edit.adapters import transcription
 from interview_edit.config.models import ModelSource, TranscriptionBackend
-from interview_edit.errors import PreflightError, UsageError
+from interview_edit.errors import DependencyError, PreflightError, ProcessingError, UsageError
 from interview_edit.models.transcript import CorrectionRule, TranscriptSegment, TranscriptWord
 from interview_edit.sync.analysis import estimate_sync, window_centers_us
 from interview_edit.sync.service import parse_manual_offset
@@ -82,7 +83,7 @@ def test_registry_model_miss_requires_authorization_without_download(
     monkeypatch.setattr(transcription, "_cached_snapshot", lambda _repo_id: None)
 
     with pytest.raises(PreflightError) as captured:
-        transcription._resolve_model(
+        transcription.resolve_model(
             backend=TranscriptionBackend.MLX_WHISPER,
             model="not-present",
             source=ModelSource.REGISTRY,
@@ -90,6 +91,107 @@ def test_registry_model_miss_requires_authorization_without_download(
         )
 
     assert captured.value.code == "model_download_authorization_required"
+
+
+def test_local_model_path_resolves_from_explicit_project_base(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    model = project / "models" / "local-whisper"
+    model.mkdir(parents=True)
+
+    resolved = transcription.resolve_model(
+        backend=TranscriptionBackend.MLX_WHISPER,
+        model="models/local-whisper",
+        source=ModelSource.LOCAL,
+        download_policy="never",
+        base_dir=project,
+    )
+
+    assert resolved == str(model.resolve())
+
+
+def test_mlx_adapter_normalizes_backend_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_module = SimpleNamespace(
+        transcribe=lambda *_args, **_kwargs: {
+            "language": "zh",
+            "segments": [
+                {
+                    "start": 0.25,
+                    "end": 0.75,
+                    "text": " 你好",
+                    "words": [{"start": 0.25, "end": 0.5, "word": " 你", "probability": 0.9}],
+                }
+            ],
+        }
+    )
+    monkeypatch.setattr(transcription.importlib, "import_module", lambda _name: fake_module)
+    adapter = transcription.MlxWhisperTranscriber(
+        model="tiny", resolved_model="/models/tiny", device="metal"
+    )
+
+    result = adapter.transcribe(Path("chunk.wav"), language="zh")
+
+    assert result.language == "zh"
+    assert result.segments[0].start_seconds == 0.25
+    assert result.segments[0].words[0].text == " 你"
+    assert result.segments[0].words[0].probability == 0.9
+
+
+def test_mlx_adapter_classifies_initialization_and_runtime_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = transcription.MlxWhisperTranscriber(
+        model="tiny", resolved_model="/models/tiny", device="metal"
+    )
+    monkeypatch.setattr(
+        transcription.importlib,
+        "import_module",
+        lambda _name: (_ for _ in ()).throw(ImportError("missing runtime")),
+    )
+    with pytest.raises(DependencyError) as missing:
+        adapter.transcribe(Path("chunk.wav"), language="zh")
+    assert missing.value.code == "mlx_whisper_unavailable"
+
+    monkeypatch.setattr(
+        transcription.importlib,
+        "import_module",
+        lambda _name: SimpleNamespace(
+            transcribe=lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("metal failed"))
+        ),
+    )
+    with pytest.raises(ProcessingError) as failed:
+        adapter.transcribe(Path("chunk.wav"), language="zh")
+    assert failed.value.code == "transcription_failed"
+
+
+def test_faster_whisper_adapter_normalizes_stream(monkeypatch: pytest.MonkeyPatch) -> None:
+    segment = SimpleNamespace(
+        start=0.0,
+        end=1.0,
+        text="hello",
+        words=[SimpleNamespace(start=0.0, end=0.5, word="hello", probability=None)],
+    )
+
+    class FakeModel:
+        def __init__(self, model: str, *, device: str, compute_type: str) -> None:
+            assert (model, device, compute_type) == ("/models/base", "cpu", "auto")
+
+        def transcribe(self, *_args: object, **_kwargs: object) -> tuple[object, object]:
+            return iter([segment]), SimpleNamespace(language="en")
+
+    monkeypatch.setattr(
+        transcription.importlib,
+        "import_module",
+        lambda _name: SimpleNamespace(WhisperModel=FakeModel),
+    )
+    adapter = transcription.FasterWhisperTranscriber(
+        model="base", resolved_model="/models/base", device="cpu"
+    )
+
+    result = adapter.transcribe(Path("chunk.wav"), language="auto")
+
+    assert result.language == "en"
+    assert result.segments[0].text == "hello"
+    assert result.segments[0].words[0].probability is None
 
 
 def test_local_model_revision_changes_when_unlisted_weight_content_changes(

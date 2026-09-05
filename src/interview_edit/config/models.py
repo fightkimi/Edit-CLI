@@ -111,9 +111,9 @@ class ProxyConfig(StrictModel):
 
 
 class SafetyConfig(StrictModel):
-    source_media_read_only: bool = True
-    allow_network: bool = False
-    allow_source_symlinks_outside_root: bool = False
+    source_media_read_only: Literal[True] = True
+    allow_network: Literal[False] = False
+    allow_source_symlinks_outside_root: Literal[False] = False
 
 
 class ProjectConfig(StrictModel):

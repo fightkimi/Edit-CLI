@@ -10,12 +10,14 @@ from typer.testing import CliRunner
 
 from interview_edit.adapters.process import SubprocessRunner
 from interview_edit.cli.app import app
+from interview_edit.config.loader import load_project_config
 from interview_edit.cutlist.service import serialize_cutlist
 from interview_edit.exit_codes import ExitCode
 from interview_edit.ingest.service import IngestRequest, ingest_media
 from interview_edit.models.cutlist import Act, CutList, TimelineItem
 from interview_edit.project.service import InitRequest, initialize_project
 from interview_edit.render.service import RenderRequest, render_cutlist
+from interview_edit.status.service import read_project_status
 from tests.fixtures.media_factory import make_video, require_media_tools
 
 runner = CliRunner()
@@ -317,6 +319,13 @@ def test_freeze_requires_separate_approval_and_verify_detects_tampering(
     assert json.loads(shown.stdout)["data"]["version"]["note"] == "release candidate"
     assert verified.exit_code == ExitCode.SUCCESS, verified.output
     assert json.loads(verified.stdout)["data"]["verification"]["state"] == "passed"
+    current_status = read_project_status(
+        load_project_config(project, environ={"INTERVIEW_EDIT_USER_CONFIG": ""}),
+        project_root=project,
+    )
+    assert current_status.stages["render"]["validity"] == "current"
+    assert current_status.stages["qc"]["validity"] == "current"
+    assert current_status.stages["version"]["validity"] == "current"
 
     output_entry = next(
         entry for entry in frozen_payload["data"]["version"]["files"] if entry["role"] == "output"
@@ -332,6 +341,11 @@ def test_freeze_requires_separate_approval_and_verify_detects_tampering(
     assert {issue["code"] for issue in tampered_payload["data"]["verification"]["issues"]} >= {
         "frozen_file_modified"
     }
+    tampered_status = read_project_status(
+        load_project_config(project, environ={"INTERVIEW_EDIT_USER_CONFIG": ""}),
+        project_root=project,
+    )
+    assert tampered_status.stages["version"]["validity"] == "invalid"
 
     config_entry = next(
         entry for entry in frozen_payload["data"]["version"]["files"] if entry["role"] == "config"

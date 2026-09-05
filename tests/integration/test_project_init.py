@@ -83,9 +83,7 @@ def test_init_rejects_project_metadata_inside_media_root(tmp_path: Path) -> None
     media.mkdir()
 
     with pytest.raises(PathSafetyError) as captured:
-        initialize_project(
-            _request(media, media, artifact_root=tmp_path / "external-artifacts")
-        )
+        initialize_project(_request(media, media, artifact_root=tmp_path / "external-artifacts"))
 
     assert captured.value.code == "project_media_overlap"
     assert not (media / "interview-edit.yaml").exists()
@@ -102,19 +100,24 @@ def test_dry_run_does_not_create_project(tmp_path: Path) -> None:
     assert not project.exists()
 
 
-def test_status_uses_files_not_empty_directories_as_evidence(tmp_path: Path) -> None:
+def test_status_rejects_invalid_index_as_current_evidence(tmp_path: Path) -> None:
     media = tmp_path / "media"
     media.mkdir()
     result = initialize_project(_request(tmp_path / "project", media))
 
     initial = read_project_status(result.config)
     assert initial.stages["ingest"]["state"] == "missing"
+    assert initial.stages["ingest"]["validity"] == "missing"
 
     index = result.config.artifact_root / "index" / "media-index.json"
     index.write_text("{}", encoding="utf-8")
     updated = read_project_status(result.config)
     assert updated.stages["ingest"] == {
         "state": "present",
+        "validity": "invalid",
         "fileCount": 1,
+        "validCount": 0,
+        "expectedCount": 1,
+        "reasonCodes": ["media_index_invalid"],
         "paths": [str(result.config.artifact_root / "index")],
     }

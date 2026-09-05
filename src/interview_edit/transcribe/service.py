@@ -32,6 +32,7 @@ from interview_edit.models.transcript import (
     TranscriptSegment,
     TranscriptWord,
 )
+from interview_edit.operation.service import OperationRecorder, fail_operation, start_operation
 from interview_edit.project.layout import artifact_path, atomic_write_text
 from interview_edit.proxy.service import validate_source_revision
 
@@ -62,6 +63,8 @@ class TranscribeResult:
     artifacts: list[Path]
     resumed_chunks: int
     dry_run: bool
+    run_id: str | None
+    run_manifest_path: Path | None
 
 
 @dataclass(frozen=True)
@@ -555,16 +558,15 @@ def _write_derivatives(
     return manifest
 
 
-def transcribe_assets(
+def _transcribe_selected_assets(
     request: TranscribeRequest,
     *,
+    selected: list[MediaAsset],
+    operation: OperationRecorder | None,
     runner: ProcessRunner | None = None,
     transcriber: Transcriber | None = None,
     progress: Callable[[str], None] | None = None,
 ) -> TranscribeResult:
-    selected = _select_assets(request)
-    if not selected:
-        raise PreflightError("transcription_audio_missing", "No indexed assets contain audio.")
     language = request.language or request.config.transcription.language or request.config.language
     corrections, correction_fingerprint = _load_corrections(request.project_root)
     selected_runner = runner or SubprocessRunner()
@@ -574,12 +576,21 @@ def transcribe_assets(
             request.config.transcription,
             model=request.model,
             device=request.device,
+            model_base=request.project_root if request.model is None else None,
         )
     model_revision = (
         _model_revision(selected_transcriber.resolved_model)
         if selected_transcriber is not None and not request.dry_run
         else None
     )
+    if operation is not None and selected_transcriber is not None:
+        operation.checkpoint(
+            tools={
+                "backend": selected_transcriber.backend,
+                "backendVersion": selected_transcriber.backend_version,
+                "device": selected_transcriber.device,
+            }
+        )
 
     built: list[str] = []
     cached: list[str] = []
@@ -587,6 +598,7 @@ def transcribe_assets(
     planned: list[str] = []
     artifacts: list[Path] = []
     resumed_chunks = 0
+    completed_chunks = 0
     for position, asset in enumerate(selected, start=1):
         validate_source_revision(asset)
         audio = validated_audio_proxy(request.config, asset)
@@ -611,6 +623,16 @@ def transcribe_assets(
             if progress is not None:
                 progress(
                     f"[{position}/{len(selected)}] transcript cache hit: {asset.relative_path}"
+                )
+            if operation is not None:
+                operation.checkpoint(
+                    completed_items=[*built, *corrected_only],
+                    cached_items=cached,
+                    metrics={
+                        "completedChunks": completed_chunks,
+                        "resumedChunks": resumed_chunks,
+                    },
+                    artifacts=artifacts,
                 )
             continue
         if manifest is not None:
@@ -638,6 +660,16 @@ def transcribe_assets(
                     paths.manifest,
                 ]
             )
+            if operation is not None:
+                operation.checkpoint(
+                    completed_items=[*built, *corrected_only],
+                    cached_items=cached,
+                    metrics={
+                        "completedChunks": completed_chunks,
+                        "resumedChunks": resumed_chunks,
+                    },
+                    artifacts=artifacts,
+                )
             continue
 
         duration_us = _audio_duration_us(audio.path)
@@ -683,6 +715,16 @@ def transcribe_assets(
                     checkpoint_path,
                     checkpoint.model_dump_json(indent=2) + "\n",
                 )
+            completed_chunks += 1
+            if operation is not None:
+                operation.checkpoint(
+                    completed_items=[*built, *corrected_only],
+                    cached_items=cached,
+                    metrics={
+                        "completedChunks": completed_chunks,
+                        "resumedChunks": resumed_chunks,
+                    },
+                )
             all_segments.extend(checkpoint.segments)
         _write_derivatives(
             paths=paths,
@@ -706,6 +748,18 @@ def transcribe_assets(
                 paths.manifest,
             ]
         )
+        if operation is not None:
+            operation.checkpoint(
+                completed_items=[*built, *corrected_only],
+                cached_items=cached,
+                metrics={
+                    "completedChunks": completed_chunks,
+                    "resumedChunks": resumed_chunks,
+                },
+                artifacts=artifacts,
+            )
+    if operation is not None:
+        operation.finish(artifacts=artifacts)
     return TranscribeResult(
         built=built,
         cached=cached,
@@ -714,4 +768,49 @@ def transcribe_assets(
         artifacts=artifacts,
         resumed_chunks=resumed_chunks,
         dry_run=request.dry_run,
+        run_id=operation.run_id if operation is not None else None,
+        run_manifest_path=operation.path if operation is not None else None,
     )
+
+
+def transcribe_assets(
+    request: TranscribeRequest,
+    *,
+    runner: ProcessRunner | None = None,
+    transcriber: Transcriber | None = None,
+    progress: Callable[[str], None] | None = None,
+) -> TranscribeResult:
+    selected = _select_assets(request)
+    if not selected:
+        raise PreflightError("transcription_audio_missing", "No indexed assets contain audio.")
+    language = request.language or request.config.transcription.language or request.config.language
+    operation = start_operation(
+        request.config,
+        command="transcribe",
+        invocation={
+            "assetIds": [asset.asset_id for asset in selected],
+            "takeId": request.take_id,
+            "language": language,
+            "modelOverride": request.model is not None,
+            "device": request.device or request.config.transcription.device,
+            "resume": request.resume,
+            "force": request.force,
+        },
+        expected_items=[asset.asset_id for asset in selected],
+        input_fingerprints={
+            asset.asset_id: asset.full_hash or asset.fingerprint for asset in selected
+        },
+        enabled=not request.dry_run,
+    )
+    try:
+        return _transcribe_selected_assets(
+            request,
+            selected=selected,
+            operation=operation,
+            runner=runner,
+            transcriber=transcriber,
+            progress=progress,
+        )
+    except BaseException as error:
+        fail_operation(operation, error)
+        raise

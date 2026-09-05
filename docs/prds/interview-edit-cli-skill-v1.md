@@ -449,6 +449,11 @@ V1 支持的 `kind`：
 - 父 run。
 - 缓存命中情况。
 
+V1 的 `proxy build`、`transcribe` 与 `sync` 使用统一的本地 operation-run 清单；`render` 使用
+包含完整 FFmpeg 参数的专用 render-run 清单，`qc` 使用独立 report ID。为避免隐私泄露和
+重复大文件 I/O，operation-run 只校验小型控制产物，不写入转录正文、原始 stderr 或大型
+媒体 payload。
+
 ## 9.6 QCReport
 
 每条问题包含：
@@ -510,11 +515,8 @@ V1 支持的 `kind`：
 --project PATH
 --json
 --quiet, -q
---verbose, -v
---debug, -d
 --dry-run, -n
 --force, -f
---no-input
 --no-color
 --help, -h
 --version
@@ -526,7 +528,7 @@ V1 支持的 `kind`：
 - `--json` 输出稳定的机器协议。
 - 进度、提示和装饰信息写入 stderr。
 - 机器数据写入 stdout。
-- 非 TTY 或 `--no-input` 下禁止交互询问。
+- V1 命令均为非交互式；需要授权的动作必须通过显式参数或会话确认，不能临时弹出隐式询问。
 - 破坏性操作在非交互环境中必须显式传入 `--force`。
 - 大量内容写入文件，只在 stdout 返回摘要和路径。
 
@@ -926,7 +928,7 @@ V1 推荐：
 - 长任务开始后立即显示进度。
 - 每个 run 有独立日志。
 - 用户能够查询当前阶段、已完成数量、失败项目和下一步。
-- debug 模式记录底层命令，但默认不泄露敏感转录内容。
+- render 与 QC 运行清单记录底层参数数组，但不记录完整转录正文。
 
 ---
 

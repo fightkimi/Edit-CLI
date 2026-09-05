@@ -19,7 +19,8 @@ operation is local-first and does not require network access.
 1. Locate the project or configuration. Never infer that the current directory is the media project.
 2. Read `interview-edit.yaml`, then apply [privacy.md](references/privacy.md) before opening any
    transcript or image.
-3. Run `interview-edit status --project PATH --json`. Run `doctor` when the environment is new,
+3. Run `interview-edit status --project PATH --json` and route from stage `validity` and
+   `reasonCodes`, never the presence-only `state`. Run `doctor` when the environment is new,
    changed, or implicated by a failure.
 4. Before asserting a command or option, check the installed `interview-edit --help` and relevant
    subcommand help. Use [cli-reference.md](references/cli-reference.md) as orientation, not as a
@@ -31,6 +32,7 @@ Load only the references needed for the selected route:
 
 | Request | Read |
 |---|---|
+| improve script, pacing, captions, audio or visual quality | [quality-skills.md](references/quality-skills.md) |
 | create/revise narrative or adapt creator format | [editorial-guidance.md](references/editorial-guidance.md), [cutlist-schema.md](references/cutlist-schema.md) |
 | inspect transcript, thumbnail, contact sheet, or QC frame | [privacy.md](references/privacy.md) |
 | render, review, approve, recover, or resume | [review-and-recovery.md](references/review-and-recovery.md) |

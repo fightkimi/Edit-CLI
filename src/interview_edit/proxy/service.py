@@ -25,6 +25,7 @@ from interview_edit.models.media import (
     ProxyOutputKind,
     TimeMap,
 )
+from interview_edit.operation.service import OperationRecorder, fail_operation, start_operation
 from interview_edit.project.layout import artifact_path, atomic_write_text
 
 _PROXY_SCHEMA = "proxy-v1"
@@ -50,6 +51,8 @@ class ProxyResult:
     contact_sheet_manifest: Path
     dry_run: bool
     resumed: bool
+    run_id: str | None
+    run_manifest_path: Path | None
 
 
 @dataclass(frozen=True)
@@ -521,16 +524,7 @@ def _build_contact_sheets(
         ) from exc
 
 
-def build_proxies(
-    request: ProxyRequest,
-    *,
-    runner: ProcessRunner | None = None,
-    progress: Callable[[str], None] | None = None,
-) -> ProxyResult:
-    selected_runner = runner or SubprocessRunner()
-    ffmpeg_version = tool_version("ffmpeg", selected_runner)
-    ffprobe_version = tool_version("ffprobe", selected_runner)
-    settings = request.config.proxy.model_dump(mode="json")
+def _selected_asset_ids(request: ProxyRequest) -> list[str]:
     indexed = {asset.asset_id: asset for asset in request.index.assets}
     if request.asset_ids:
         unknown = sorted(set(request.asset_ids) - set(indexed))
@@ -540,9 +534,25 @@ def build_proxies(
                 "One or more requested assets are not present in the media index.",
                 details={"assetIds": unknown},
             )
-        selected_ids = sorted(set(request.asset_ids))
-    else:
-        selected_ids = sorted(indexed)
+        return sorted(set(request.asset_ids))
+    return sorted(indexed)
+
+
+def _build_selected_proxies(
+    request: ProxyRequest,
+    *,
+    selected_ids: list[str],
+    operation: OperationRecorder | None,
+    runner: ProcessRunner | None = None,
+    progress: Callable[[str], None] | None = None,
+) -> ProxyResult:
+    selected_runner = runner or SubprocessRunner()
+    ffmpeg_version = tool_version("ffmpeg", selected_runner)
+    ffprobe_version = tool_version("ffprobe", selected_runner)
+    if operation is not None:
+        operation.checkpoint(tools={"ffmpeg": ffmpeg_version, "ffprobe": ffprobe_version})
+    settings = request.config.proxy.model_dump(mode="json")
+    indexed = {asset.asset_id: asset for asset in request.index.assets}
     if progress is not None:
         progress(f"Preparing {len(selected_ids)} indexed asset(s) for proxy build...")
 
@@ -556,6 +566,13 @@ def build_proxies(
         validate_source_revision(asset)
         if asset.video_stream is None and not asset.audio_streams:
             skipped.append(asset_id)
+            if operation is not None:
+                operation.checkpoint(
+                    completed_items=built,
+                    cached_items=cached,
+                    skipped_items=skipped,
+                    artifacts=artifacts,
+                )
             continue
         paths = _paths(request.config, asset)
         expected = _expected_paths(asset, paths)
@@ -574,6 +591,13 @@ def build_proxies(
             cached.append(asset_id)
             artifacts.extend([path for _, path in _expected_paths(asset, paths)])
             artifacts.append(paths.manifest)
+            if operation is not None:
+                operation.checkpoint(
+                    completed_items=built,
+                    cached_items=cached,
+                    skipped_items=skipped,
+                    artifacts=artifacts,
+                )
             continue
         if request.dry_run:
             if progress is not None:
@@ -593,6 +617,13 @@ def build_proxies(
             )
         )
         built.append(asset_id)
+        if operation is not None:
+            operation.checkpoint(
+                completed_items=built,
+                cached_items=cached,
+                skipped_items=skipped,
+                artifacts=artifacts,
+            )
 
     contact_manifest = artifact_path(
         request.config.artifact_root, "contact-sheets", "manifest.json"
@@ -611,6 +642,8 @@ def build_proxies(
         artifacts.extend([contact_manifest, *sheets])
     if progress is not None:
         progress("Proxy stage ready." if not request.dry_run else "Proxy plan ready.")
+    if operation is not None:
+        operation.finish(artifacts=artifacts)
     return ProxyResult(
         built=built,
         cached=cached,
@@ -620,4 +653,42 @@ def build_proxies(
         contact_sheet_manifest=contact_manifest,
         dry_run=request.dry_run,
         resumed=request.resume,
+        run_id=operation.run_id if operation is not None else None,
+        run_manifest_path=operation.path if operation is not None else None,
     )
+
+
+def build_proxies(
+    request: ProxyRequest,
+    *,
+    runner: ProcessRunner | None = None,
+    progress: Callable[[str], None] | None = None,
+) -> ProxyResult:
+    selected_ids = _selected_asset_ids(request)
+    indexed = {asset.asset_id: asset for asset in request.index.assets}
+    operation = start_operation(
+        request.config,
+        command="proxy_build",
+        invocation={
+            "assetIds": selected_ids,
+            "resume": request.resume,
+            "force": request.force,
+        },
+        expected_items=selected_ids,
+        input_fingerprints={
+            asset_id: indexed[asset_id].full_hash or indexed[asset_id].fingerprint
+            for asset_id in selected_ids
+        },
+        enabled=not request.dry_run,
+    )
+    try:
+        return _build_selected_proxies(
+            request,
+            selected_ids=selected_ids,
+            operation=operation,
+            runner=runner,
+            progress=progress,
+        )
+    except BaseException as error:
+        fail_operation(operation, error)
+        raise

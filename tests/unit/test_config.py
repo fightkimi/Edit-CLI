@@ -7,7 +7,7 @@ import yaml
 from pydantic import ValidationError
 
 from interview_edit.config.loader import load_project_config
-from interview_edit.config.models import PrivacyMode, TranscriptionConfig
+from interview_edit.config.models import PrivacyMode, SafetyConfig, TranscriptionConfig
 from interview_edit.models.cutlist import TimelineSpec
 
 
@@ -66,6 +66,19 @@ def test_environment_overrides_project_and_cli_has_highest_priority(tmp_path: Pa
 def test_public_config_rejects_mock_transcription_backend() -> None:
     with pytest.raises(ValidationError):
         TranscriptionConfig(backend="mock")
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"source_media_read_only": False},
+        {"allow_network": True},
+        {"allow_source_symlinks_outside_root": True},
+    ],
+)
+def test_v1_safety_invariants_cannot_be_disabled(values: dict[str, bool]) -> None:
+    with pytest.raises(ValidationError):
+        SafetyConfig(**values)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("value", ["25", "0/1", "25/0", "not-a-rate"])

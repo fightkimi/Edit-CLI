@@ -19,6 +19,9 @@ def test_help_and_version_are_available() -> None:
     assert "init" in help_result.stdout
     assert "doctor" in help_result.stdout
     assert "status" in help_result.stdout
+    assert "--verbose" not in help_result.stdout
+    assert "--debug" not in help_result.stdout
+    assert "--no-input" not in help_result.stdout
     assert version_result.exit_code == ExitCode.SUCCESS
     assert version_result.stdout.strip() == "0.6.0"
 
@@ -95,3 +98,36 @@ def test_status_missing_project_is_exit_two_with_json() -> None:
     assert result.exit_code == ExitCode.USAGE_ERROR
     payload = json.loads(result.stdout)
     assert payload["error"]["code"] == "project_required"
+
+
+def test_status_invalid_index_recommends_ingest(tmp_path: Path) -> None:
+    media = tmp_path / "media"
+    media.mkdir()
+    project = tmp_path / "project"
+    initialized = runner.invoke(
+        app,
+        [
+            "init",
+            "--project",
+            str(project),
+            "--name",
+            "Status route",
+            "--media-root",
+            str(media),
+            "--privacy",
+            "strict",
+            "--json",
+        ],
+    )
+    assert initialized.exit_code == ExitCode.SUCCESS, initialized.output
+    (project / "artifacts" / "index" / "media-index.json").write_text("{}", encoding="utf-8")
+
+    result = runner.invoke(app, ["status", "--project", str(project), "--json"])
+
+    assert result.exit_code == ExitCode.SUCCESS, result.output
+    payload = json.loads(result.stdout)
+    assert payload["data"]["stages"]["ingest"]["validity"] == "invalid"
+    assert payload["next"] == [
+        f"interview-edit doctor --project {project}",
+        f"interview-edit ingest --project {project}",
+    ]

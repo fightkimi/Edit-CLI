@@ -22,6 +22,7 @@ from interview_edit.config.models import ProjectConfig
 from interview_edit.errors import DependencyError, PreflightError, ProcessingError, UsageError
 from interview_edit.models.media import MediaAsset, MediaIndex
 from interview_edit.models.sync import SyncCamera, SyncEvidence, SyncReport, SyncWindow
+from interview_edit.operation.service import OperationRecorder, fail_operation, start_operation
 from interview_edit.project.layout import artifact_path, atomic_write_text
 from interview_edit.proxy.service import validate_source_revision
 from interview_edit.sync.analysis import energy_envelope, estimate_sync, window_centers_us
@@ -58,6 +59,8 @@ class SyncResult:
     cached: bool
     uncertain_cameras: list[str]
     dry_run: bool
+    run_id: str | None
+    run_manifest_path: Path | None
 
 
 def _utc_now() -> str:
@@ -239,9 +242,7 @@ def load_current_sync_report(
             "Synchronization settings are missing or invalid; run sync again.",
             details={"takeId": take_id, "path": str(path)},
         )
-    analysis = _analysis_settings(
-        config, cameras, report.reference_camera_id, window_count
-    )
+    analysis = _analysis_settings(config, cameras, report.reference_camera_id, window_count)
     if report.analysis != analysis:
         raise PreflightError(
             "sync_report_stale",
@@ -327,9 +328,7 @@ def _visual_evidence(
     centers: tuple[int, ...],
     runner: ProcessRunner,
 ) -> list[SyncEvidence]:
-    evidence_root = artifact_path(
-        request.config.artifact_root, "sync", request.take_id, "evidence"
-    )
+    evidence_root = artifact_path(request.config.artifact_root, "sync", request.take_id, "evidence")
     evidence_root.mkdir(parents=True, exist_ok=True)
     result_by_camera = {item.camera_id: item for item in results}
     ordered_cameras = [request.reference_camera_id] + [
@@ -354,9 +353,7 @@ def _visual_evidence(
                 f"pad=480:270:(ow-iw)/2:(oh-ih)/2[v{input_index}]"
                 for input_index in range(len(proxies))
             ]
-            stack_inputs = "".join(
-                f"[v{input_index}]" for input_index in range(len(proxies))
-            )
+            stack_inputs = "".join(f"[v{input_index}]" for input_index in range(len(proxies)))
             filters.append(f"{stack_inputs}hstack=inputs={len(proxies)}[out]")
             args.extend(
                 [
@@ -397,9 +394,10 @@ def _visual_evidence(
     return evidence
 
 
-def sync_take(
+def _sync_take(
     request: SyncRequest,
     *,
+    operation: OperationRecorder | None,
     runner: ProcessRunner | None = None,
     progress: Callable[[str], None] | None = None,
 ) -> SyncResult:
@@ -448,12 +446,12 @@ def sync_take(
         audio = validated_audio_proxy(request.config, asset)
         audio_paths[camera_id] = audio.path
         audio_hashes[camera_id] = audio.sha256
+    if operation is not None:
+        operation.checkpoint(tools={"numpy": np.__version__})
     cache_key = _cache_key(
         request=request, cameras=cameras, audio_hashes=audio_hashes, analysis=analysis
     )
-    report_path = artifact_path(
-        request.config.artifact_root, "sync", request.take_id, "sync.json"
-    )
+    report_path = artifact_path(request.config.artifact_root, "sync", request.take_id, "sync.json")
     if request.dry_run:
         return SyncResult(
             report=None,
@@ -462,6 +460,8 @@ def sync_take(
             cached=False,
             uncertain_cameras=[],
             dry_run=True,
+            run_id=None,
+            run_manifest_path=None,
         )
     cached = (
         None
@@ -472,17 +472,27 @@ def sync_take(
         cached_uncertain = [
             camera.camera_id for camera in cached.cameras if camera.status == "uncertain"
         ]
+        artifacts = [
+            report_path,
+            _checksum_path(report_path),
+            *(Path(item.path) for item in cached.evidence),
+        ]
+        if operation is not None:
+            operation.checkpoint(cached_items=sorted(cameras))
+            operation.finish(
+                state="review_required" if cached_uncertain else "succeeded",
+                artifacts=artifacts,
+                warning_codes=["sync_confidence_insufficient"] if cached_uncertain else [],
+            )
         return SyncResult(
             report=cached,
             report_path=report_path,
-            artifacts=[
-                report_path,
-                _checksum_path(report_path),
-                *(Path(item.path) for item in cached.evidence),
-            ],
+            artifacts=artifacts,
             cached=True,
             uncertain_cameras=cached_uncertain,
             dry_run=False,
+            run_id=operation.run_id if operation is not None else None,
+            run_manifest_path=operation.path if operation is not None else None,
         )
 
     if progress is not None:
@@ -598,11 +608,58 @@ def sync_take(
     atomic_write_text(report_path, report.model_dump_json(indent=2) + "\n")
     checksum_path = _checksum_path(report_path)
     atomic_write_text(checksum_path, sha256_file(report_path) + "\n")
+    artifacts = [report_path, checksum_path, *(Path(item.path) for item in evidence)]
+    if operation is not None:
+        operation.checkpoint(completed_items=sorted(cameras))
+        operation.finish(
+            state="review_required" if uncertain else "succeeded",
+            artifacts=artifacts,
+            warning_codes=["sync_confidence_insufficient"] if uncertain else [],
+        )
     return SyncResult(
         report=report,
         report_path=report_path,
-        artifacts=[report_path, checksum_path, *(Path(item.path) for item in evidence)],
+        artifacts=artifacts,
         cached=False,
         uncertain_cameras=uncertain,
         dry_run=False,
+        run_id=operation.run_id if operation is not None else None,
+        run_manifest_path=operation.path if operation is not None else None,
     )
+
+
+def sync_take(
+    request: SyncRequest,
+    *,
+    runner: ProcessRunner | None = None,
+    progress: Callable[[str], None] | None = None,
+) -> SyncResult:
+    selected = [asset for asset in request.index.assets if asset.take_id == request.take_id]
+    camera_ids = sorted({asset.camera_id for asset in selected if asset.camera_id is not None})
+    operation = start_operation(
+        request.config,
+        command="sync",
+        invocation={
+            "takeId": request.take_id,
+            "referenceCameraId": request.reference_camera_id,
+            "windowCount": request.window_count or request.config.sync.window_count,
+            "visualCheck": request.visual_check,
+            "manualCameraIds": sorted(item.camera_id for item in request.manual_offsets),
+            "force": request.force,
+        },
+        expected_items=camera_ids,
+        input_fingerprints={
+            asset.asset_id: asset.full_hash or asset.fingerprint for asset in selected
+        },
+        enabled=not request.dry_run,
+    )
+    try:
+        return _sync_take(
+            request,
+            operation=operation,
+            runner=runner,
+            progress=progress,
+        )
+    except BaseException as error:
+        fail_operation(operation, error)
+        raise

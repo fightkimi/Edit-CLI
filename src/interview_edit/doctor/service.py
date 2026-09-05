@@ -12,12 +12,13 @@ from pathlib import Path
 from typing import Any, Literal
 
 from interview_edit.adapters.process import ProcessRunner, SubprocessRunner
+from interview_edit.adapters.transcription import resolve_model
 from interview_edit.config.models import (
     ModelSource,
     ProjectConfig,
     TranscriptionBackend,
 )
-from interview_edit.errors import PathSafetyError
+from interview_edit.errors import PathSafetyError, PreflightError
 from interview_edit.exit_codes import ExitCode
 from interview_edit.project.layout import canonical, validate_artifact_boundary
 
@@ -209,38 +210,36 @@ def _transcription_checks(
     )
     if config is not None:
         transcription = config.transcription
-        if transcription.model_source == ModelSource.LOCAL:
-            model_path = Path(transcription.model).expanduser()
-            if not model_path.is_absolute():
-                model_base = project_root or config.artifact_root.parent
-                model_path = canonical(model_base / model_path)
-            if model_path.exists():
-                checks.append(
-                    DoctorCheck(
-                        "transcription_model",
-                        "pass",
-                        f"Configured local transcription model exists: {model_path}",
-                    )
+        model_base = project_root or config.artifact_root.parent
+        try:
+            resolved_model = resolve_model(
+                backend=TranscriptionBackend(selected),
+                model=transcription.model,
+                source=transcription.model_source,
+                download_policy=transcription.download_policy,
+                base_dir=model_base,
+            )
+        except PreflightError as error:
+            required_local = transcription.model_source == ModelSource.LOCAL
+            checks.append(
+                DoctorCheck(
+                    "transcription_model",
+                    "fail" if required_local else "warning",
+                    error.message,
+                    error.details,
+                    ExitCode.DEPENDENCY_MISSING if required_local else None,
                 )
-            else:
-                checks.append(
-                    DoctorCheck(
-                        "transcription_model",
-                        "fail",
-                        f"Configured local transcription model is missing: {model_path}",
-                        {"path": str(model_path)},
-                        ExitCode.DEPENDENCY_MISSING,
-                    )
-                )
+            )
         else:
             checks.append(
                 DoctorCheck(
                     "transcription_model",
-                    "warning",
-                    "Registry model availability is not assumed; first download requires approval.",
+                    "pass",
+                    "Configured transcription model is available locally.",
                     {
                         "model": transcription.model,
-                        "downloadPolicy": transcription.download_policy,
+                        "resolvedModel": resolved_model,
+                        "source": transcription.model_source.value,
                     },
                 )
             )

@@ -8,11 +8,8 @@ Global options may precede the command. `--project`, `--json`, and `--force` are
 --project PATH
 --json
 --quiet, -q
---verbose, -v
---debug, -d
 --dry-run, -n
 --force, -f
---no-input
 --no-color
 --version
 --help, -h
@@ -68,7 +65,22 @@ Checks Python, FFmpeg, FFprobe, required encoders, actual VideoToolbox availabil
 
 ### `status`
 
-Reads configuration and reports concrete artifact presence. It does not write a fuzzy global completion flag. It recommends `ingest` when the index is absent and `proxy build` when index evidence exists but proxy evidence does not.
+Reads configuration and reports both concrete artifact presence and validated control evidence. It
+does not write a fuzzy global completion flag. Every stage preserves `state: present|missing` for
+protocol compatibility and adds `validity: current|partial|invalid|missing`, `validCount`, and
+`expectedCount` plus content-safe `reasonCodes`. Status validates schemas, project/source identity, declared paths,
+declared sizes, small control-file checksums, terminal run state, and downstream evidence links as
+applicable. It intentionally avoids re-hashing large proxies, renders, and frozen outputs on every
+inspection. Owning commands still enforce full payload checksums before reuse, QC, or release; the
+master and release gates also enforce an available full source hash.
+
+Suggested `next` commands use `validity`, not file presence. A corrupt or empty index therefore
+recommends `ingest`; incomplete proxy/transcript evidence recommends the owning stage; an orphaned
+MP4 without a successful current run manifest does not count as a current render.
+
+Proxy, transcribe, and sync stages also expose a content-safe `latestRun` containing the run ID,
+terminal state, expected/completed/cached/skipped counts, stable error code, timestamps, and local
+manifest path. A failed retry is visible there but does not invalidate older current artifacts.
 
 ## M2 behavior
 
@@ -99,6 +111,8 @@ interview-edit proxy build --project PATH
 - Cache validity requires a matching manifest and output size/SHA-256, not only file existence.
 - Completed per-asset outputs are reusable after interruption. New files replace published files only after all FFmpeg work for that asset succeeds; the manifest is committed last.
 - `--force` rebuilds selected assets. `--dry-run` reports planned assets without creating artifacts.
+- Every non-dry invocation returns a `proxy_*` run ID and checkpoints content-safe progress in the
+  operation-run manifest.
 
 ## M3 behavior
 
@@ -121,6 +135,8 @@ interview-edit transcribe --project PATH
   corrected derivatives.
 - A local directory passed by `--model` is accepted. A missing model name never triggers an implicit
   download and returns exit 3.
+- Every non-dry invocation returns a `transcribe_*` run ID and checkpoints completed/resumed chunks
+  without logging recognized text.
 
 ### `sync`
 
@@ -137,6 +153,8 @@ interview-edit sync --project PATH --take ID --reference-camera ID
 - `--visual-check` verifies existing video proxies and creates local side-by-side JPEG evidence.
 - Low-confidence automatic cameras produce an evidence-bearing JSON envelope with `ok: false` and
   exit 3. Manual values accept signed `us`, `ms`, or `s` suffixes and are recorded as overrides.
+- Every non-dry invocation returns a `sync_*` run ID. A completed low-confidence analysis records
+  `review_required`, not a false success or a processing failure.
 
 ## M4 behavior
 

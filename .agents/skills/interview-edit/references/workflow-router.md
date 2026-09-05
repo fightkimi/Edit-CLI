@@ -11,6 +11,8 @@ not imply that its prerequisites exist or remain current.
 4. Prior conversation, remembered commands, and assumptions.
 
 If a lower source conflicts with a higher one, follow the higher source and report the drift.
+Within `status`, route from each stage's `validity` and content-safe `reasonCodes`; `state` reports
+presence only and is retained for protocol compatibility.
 
 ## Intent routes
 

@@ -20,8 +20,8 @@ interview-edit [GLOBAL OPTIONS] version freeze|list|show|verify
 Global options:
 
 ```text
---project PATH  --json  --quiet|-q  --verbose|-v  --debug|-d
---dry-run|-n  --force|-f  --no-input  --no-color  --version
+--project PATH  --json  --quiet|-q  --dry-run|-n
+--force|-f  --no-color  --version
 ```
 
 Use `--json` for machine-readable calls. Parse the single JSON envelope from stdout; treat stderr as diagnostics. Respect nonzero exits:

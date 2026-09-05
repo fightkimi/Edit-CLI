@@ -40,6 +40,18 @@ The project Skill lives at `.agents/skills/interview-edit/`. Codex discovers it 
 this repository or its descendants; the installed CLI itself works from any directory when given an
 explicit `--project` path.
 
+## Output-quality Skills
+
+Four focused project Skills complement `interview-edit`: `edit-story-structure` for the editorial
+script, `edit-speech-pacing` for natural cuts, `edit-caption-audio-review` for readable captions and
+dialogue, and `edit-render-review` for composition and export review. Ask, for example:
+“用这些 Skills 改善这版剪辑，先调整脚本和切点，再检查字幕与画面，给我预览。”
+
+Three are MIT-licensed upstream adaptations with pinned source records and preserved notices;
+the render-review Skill is written for this CLI. No alternate renderer or automatic cloud workflow
+is installed. Skills guide decisions and review; they do not by themselves prove better output or
+add unsupported effects. See the [selection and integration record](docs/research/2026-09-05-output-quality-skills.md).
+
 ## Implemented commands
 
 ```bash
@@ -77,6 +89,10 @@ confidence, and provenance, and can create local side-by-side review screenshots
 automatic results retain their report but return exit 3; use an audited `--manual-offset` only after
 review.
 
+Every non-dry proxy, transcription, and synchronization invocation writes a content-safe operation
+run under `artifacts/logs/`. The run ID correlates CLI output with completed/cached counts, stable
+error codes, and small control artifacts without copying transcript text or large media payloads.
+
 `cutlist scaffold` writes either a blank edit document or a chronological skeleton from one current
 corrected transcript. `cutlist inspect` reports structure without exposing content-bearing text,
 and `cutlist validate` checks schema, source bounds, camera/sync relationships, overlays, subtitles,
@@ -103,4 +119,4 @@ uv run mypy src
 uv run pytest
 ```
 
-See the [V1 product requirements](docs/prds/interview-edit-cli-skill-v1.md), [project configuration](docs/specs/project-config-v1.md), [CLI contract](docs/specs/cli-contract-v1.md), [cut-list contract](docs/specs/cutlist-schema-v1.md), [render-run protocol](docs/specs/render-run-v1.md), [QC report protocol](docs/specs/qc-report-v1.md), [frozen-version protocol](docs/specs/version-manifest-v1.md), [media-index protocol](docs/specs/media-index-v1.md), [transcript/sync protocol](docs/specs/transcript-and-sync-v1.md), [M6 plan](docs/plans/m6-skill-and-beta-acceptance.md), [M7 synthetic-matrix plan](docs/plans/m7-synthetic-creator-matrix-and-intake.md), [M7 acceptance evidence](docs/tests/m7-synthetic-creator-matrix.md), [real-media Beta intake checklist](docs/tests/real-media-beta-checklist.md), [V1 release-readiness evidence](docs/tests/v1-release-readiness.md), [Skill benchmark](docs/research/2026-09-04-interview-edit-skill-benchmark.md), [Skill orchestration ADR](docs/decisions/0008-state-aware-skill-orchestration.md), and [artifact/evidence hardening ADR](docs/decisions/0009-artifact-boundaries-and-evidence-freshness.md).
+See the [V1 product requirements](docs/prds/interview-edit-cli-skill-v1.md), [project configuration](docs/specs/project-config-v1.md), [CLI contract](docs/specs/cli-contract-v1.md), [cut-list contract](docs/specs/cutlist-schema-v1.md), [operation-run protocol](docs/specs/operation-run-v1.md), [render-run protocol](docs/specs/render-run-v1.md), [QC report protocol](docs/specs/qc-report-v1.md), [frozen-version protocol](docs/specs/version-manifest-v1.md), [media-index protocol](docs/specs/media-index-v1.md), [transcript/sync protocol](docs/specs/transcript-and-sync-v1.md), [M6 plan](docs/plans/m6-skill-and-beta-acceptance.md), [M7 synthetic-matrix plan](docs/plans/m7-synthetic-creator-matrix-and-intake.md), [M7 acceptance evidence](docs/tests/m7-synthetic-creator-matrix.md), [real-media Beta intake checklist](docs/tests/real-media-beta-checklist.md), [V1 release-readiness evidence](docs/tests/v1-release-readiness.md), [Skill benchmark](docs/research/2026-09-04-interview-edit-skill-benchmark.md), [Skill orchestration ADR](docs/decisions/0008-state-aware-skill-orchestration.md), and [artifact/evidence hardening ADR](docs/decisions/0009-artifact-boundaries-and-evidence-freshness.md).

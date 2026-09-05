@@ -16,6 +16,7 @@ from interview_edit.models.cutlist import Act, CutList, Overlay, TimelineItem
 from interview_edit.models.media import MediaAsset
 from interview_edit.project.service import InitRequest, initialize_project
 from interview_edit.proxy.service import ProxyRequest, build_proxies
+from interview_edit.status.service import read_project_status
 from tests.fixtures.media_factory import make_video, require_media_tools
 
 runner = CliRunner()
@@ -288,3 +289,8 @@ def test_five_creator_formats_validate_render_and_pass_preview_qc(tmp_path: Path
 
     assert observed_roles == set(SCENARIOS)
     assert all(_sha256(path) == digest for path, digest in source_hashes.items())
+    status = read_project_status(initialized.config, project_root=project)
+    assert status.stages["ingest"]["validity"] == "current"
+    assert status.stages["proxy"]["validity"] == "current"
+    assert status.stages["render"]["validity"] == "current"
+    assert status.stages["qc"]["validity"] == "current"

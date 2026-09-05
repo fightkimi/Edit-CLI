@@ -112,6 +112,10 @@ transcription is available only as an injected test fixture, never as project co
 ## Safety and path rules
 
 - `privacy_mode` must be chosen explicitly at initialization.
+- The three V1 `safety` values are invariants, not opt-out switches:
+  `source_media_read_only` must be `true`, while `allow_network` and
+  `allow_source_symlinks_outside_root` must be `false`. Opposite values make the configuration
+  invalid instead of silently changing or pretending to change the product boundary.
 - Relative media, artifact, and font paths resolve from the directory containing `interview-edit.yaml`.
 - Canonical artifact and media roots must not contain one another.
 - Generated artifact paths must remain under the artifact root without traversing an existing
@@ -120,6 +124,9 @@ transcription is available only as an injected test fixture, never as project co
 - The project directory and explicit cut-list outputs must not be placed inside a media root.
 - Existing configuration is preserved unless `--force` is explicit; force preserves the stable project ID.
 - Model source `registry` never implies download permission. Model source `local` must resolve to an existing path before transcription.
+- A relative model path with `model_source: local` resolves from the directory containing
+  `interview-edit.yaml`, consistently in both `doctor` and `transcribe`. A relative `--model`
+  command override resolves from the caller's current directory.
 - M3 resolves registry identifiers from local caches only. `download_policy: ask` means report that
   authorization is required; it does not make a command prompt or download by itself.
 - Transcription chunk duration and all sync-analysis settings participate in downstream cache keys.
