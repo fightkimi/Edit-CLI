@@ -14,7 +14,7 @@ def setup(tmp_path):
     config, path, doc = base_setup(tmp_path)
     doc.timeline.width = 320
     doc.timeline.height = 180
-    path.write_text(serialize_cutlist(doc))
+    path.write_text(serialize_cutlist(doc), encoding="utf-8")
     return config, path, doc
 
 
@@ -43,7 +43,7 @@ def test_output_changed_duration_needs_explicit_new_expectation(tmp_path):
 def test_output_wrong_canvas_is_rejected(tmp_path):
     config, path, doc = setup(tmp_path)
     doc.timeline.width = 640
-    path.write_text(serialize_cutlist(doc))
+    path.write_text(serialize_cutlist(doc), encoding="utf-8")
     package = export_jianying(config, doc, path, name="output").draft_path
     video = tmp_path / "native.mp4"
     make_video(video, duration_seconds=0.8)

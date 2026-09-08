@@ -21,9 +21,9 @@ from tests.unit.test_text_quality import font_path
 def project_cut(tmp_path):
     project, path = _render_project(tmp_path)
     config_path = project / "interview-edit.yaml"
-    config = yaml.safe_load(config_path.read_text())
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     config["fonts"] = [str(font_path())]
-    config_path.write_text(yaml.safe_dump(config, allow_unicode=True))
+    config_path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
     return project, path
 
 
@@ -66,14 +66,14 @@ def test_native_export_keeps_editable_tracks_and_portable_media(project_cut):
             source_out_us=600_000,
         )
     ]
-    path.write_text(serialize_cutlist(document))
+    path.write_text(serialize_cutlist(document), encoding="utf-8")
     before = path.read_bytes()
     result = export(project, path, "--platform", "both", "--bundle-media")
     assert result.exit_code == 0, result.output
     payload = json.loads(result.stdout)
     bundle = Path(payload["data"]["draftPath"])
-    mac = json.loads((bundle / "draft_info.json").read_text())
-    windows = json.loads((bundle / "draft_content.json").read_text())
+    mac = json.loads((bundle / "draft_info.json").read_text(encoding="utf-8"))
+    windows = json.loads((bundle / "draft_content.json").read_text(encoding="utf-8"))
     assert mac["platform"]["os"] == "mac"
     assert windows["platform"]["os"] == "windows"
     assert mac["tracks"] == windows["tracks"]
@@ -92,7 +92,7 @@ def test_native_export_keeps_editable_tracks_and_portable_media(project_cut):
     assert path.read_bytes() == before
     assert (bundle / "export-manifest.json").is_file()
     assert len(list((bundle / "Resources").rglob("*.mp4"))) == 1
-    meta = json.loads((bundle / "draft_meta_info.json").read_text())
+    meta = json.loads((bundle / "draft_meta_info.json").read_text(encoding="utf-8"))
     assert meta["draft_materials"][0]["value"]
     assert "可修改" not in result.stdout
 
@@ -126,11 +126,11 @@ def test_export_dry_run_and_native_fades(project_cut):
         update={"item_id": "second", "transition_out": None, "transition_in": first.transition_out},
     )
     doc.acts[0].items.append(second)
-    path.write_text(serialize_cutlist(doc))
+    path.write_text(serialize_cutlist(doc), encoding="utf-8")
     result = export(project, path)
     assert result.exit_code == 0, result.output
     package = Path(json.loads(result.stdout)["data"]["draftPath"])
-    content = json.loads((package / "draft_info.json").read_text())
+    content = json.loads((package / "draft_info.json").read_text(encoding="utf-8"))
     properties = {
         k["property_type"]
         for t in content["tracks"]
@@ -152,15 +152,15 @@ def test_install_rebases_paths_and_preserves_existing_library(project_cut, tmp_p
     library = tmp_path / "native-library"
     library.mkdir()
     registry = library / "root_meta_info.json"
-    registry.write_text('{"existing":"do not touch"}')
+    registry.write_text('{"existing":"do not touch"}', encoding="utf-8")
     planned = install_draft(package, library, target, dry_run=True)
     assert not planned.exists()
     installed = install_draft(package, library, target)
-    assert registry.read_text() == '{"existing":"do not touch"}'
+    assert registry.read_text(encoding="utf-8") == '{"existing":"do not touch"}'
     assert verify_draft(installed).platform == target
     assert verify_draft(package).platform == "both"
     filename = "draft_info.json" if target == "macos" else "draft_content.json"
-    content = json.loads((installed / filename).read_text())
+    content = json.loads((installed / filename).read_text(encoding="utf-8"))
     for category in ["videos", "audios"]:
         for material in content["materials"][category]:
             assert Path(material["path"]).is_file()
@@ -179,7 +179,7 @@ def test_modified_or_symlink_package_cannot_install(project_cut, tmp_path):
     alias.symlink_to(package, target_is_directory=True)
     with pytest.raises(PathSafetyError):
         install_draft(alias, library, "macos")
-    (package / "draft_info.json").write_text("{}")
+    (package / "draft_info.json").write_text("{}", encoding="utf-8")
     with pytest.raises(PreflightError):
         install_draft(package, library, "macos")
     assert list(library.iterdir()) == []
@@ -237,11 +237,11 @@ def test_export_native_titles_stills_and_overlay_title_remain_separate(project_c
             item_id="image", kind="still", timeline_duration_us=400_000, image_path="card.png"
         )
     )
-    path.write_text(serialize_cutlist(doc))
+    path.write_text(serialize_cutlist(doc), encoding="utf-8")
     result = export(project, path)
     assert result.exit_code == 0, result.output
     package = Path(json.loads(result.stdout)["data"]["draftPath"])
-    draft = json.loads((package / "draft_info.json").read_text())
+    draft = json.loads((package / "draft_info.json").read_text(encoding="utf-8"))
     assert len([t for t in draft["tracks"] if t["type"] == "text"]) == 2
     assert any(m["type"] == "photo" for m in draft["materials"]["videos"])
 
@@ -284,7 +284,8 @@ def test_multicam_export_reuses_sync_mapping_and_keeps_one_audio_spine(project_c
                     {"glob": "close.mp4", "camera_id": "close", "take_id": "take"},
                 ],
             }
-        )
+        ),
+        encoding="utf-8",
     )
     indexed = ingest_media(IngestRequest(config=config, camera_map=camera_map))
     build_proxies(ProxyRequest(config=config, index=indexed.index))
@@ -305,11 +306,11 @@ def test_multicam_export_reuses_sync_mapping_and_keeps_one_audio_spine(project_c
     item.camera_cuts = [
         CameraCut(cut_id="close-cut", camera_id="close", start_us=200_000, duration_us=300_000)
     ]
-    path.write_text(serialize_cutlist(document))
+    path.write_text(serialize_cutlist(document), encoding="utf-8")
     result = export(project, path)
     assert result.exit_code == 0, result.output
     package = Path(json.loads(result.stdout)["data"]["draftPath"])
-    draft = json.loads((package / "draft_info.json").read_text())
+    draft = json.loads((package / "draft_info.json").read_text(encoding="utf-8"))
     videos = next(t for t in draft["tracks"] if t["type"] == "video")["segments"]
     audio = next(t for t in draft["tracks"] if t["type"] == "audio")["segments"]
     assert len(videos) == 3 and len(audio) == 1
@@ -324,7 +325,7 @@ def test_invalid_cutlist_stops_export_before_writes(project_cut):
     item = doc.acts[0].items[0]
     item.source_out_us = 999_000_000
     item.timeline_duration_us = 998_900_000
-    path.write_text(serialize_cutlist(doc))
+    path.write_text(serialize_cutlist(doc), encoding="utf-8")
     result = export(project, path)
     assert result.exit_code == 3, result.output
     assert not (project / "artifacts/exports").exists()

@@ -27,7 +27,7 @@ def test_reject_stale_passed_document_before_export(tmp_path):
     changed = old.model_copy(deep=True)
     changed.acts[0].items[0].source_out_us -= 100_000
     changed.acts[0].items[0].timeline_duration_us -= 100_000
-    path.write_text(serialize_cutlist(changed))
+    path.write_text(serialize_cutlist(changed), encoding="utf-8")
     with pytest.raises(PreflightError):
         export_jianying(config, old, path, name="stale")
     assert not list((config.artifact_root / "exports").glob("stale-*"))
@@ -42,7 +42,7 @@ def test_reject_cutlist_change_after_serialization(tmp_path, monkeypatch):
         revised = load_cutlist(path)
         revised.acts[0].items[0].source_out_us -= 100_000
         revised.acts[0].items[0].timeline_duration_us -= 100_000
-        path.write_text(serialize_cutlist(revised))
+        path.write_text(serialize_cutlist(revised), encoding="utf-8")
         return result
 
     monkeypatch.setattr(DraftBuilder, "build", update)
@@ -76,7 +76,7 @@ def test_native_semantics_rejected_even_when_hashes_match(tmp_path, defect):
     result = export_jianying(config, document, path, name="test")
     package = result.draft_path
     entry = package / "draft_info.json"
-    data = json.loads(entry.read_text())
+    data = json.loads(entry.read_text(encoding="utf-8"))
     segment = data["tracks"][0]["segments"][0]
     if defect == "orphan":
         segment["material_id"] = "NONEXISTENT"
@@ -100,12 +100,12 @@ def test_native_semantics_rejected_even_when_hashes_match(tmp_path, defect):
                 "keyframe_list": [{"id": "p", "time_offset": 999999999, "values": [1.0]}],
             }
         ]
-    entry.write_text(json.dumps(data))
+    entry.write_text(json.dumps(data), encoding="utf-8")
     manifest = package / "export-manifest.json"
-    value = json.loads(manifest.read_text())
+    value = json.loads(manifest.read_text(encoding="utf-8"))
     record = next(r for r in value["files"] if r["relative_path"] == entry.name)
     record.update(size=entry.stat().st_size, sha256=sha256_file(entry))
-    manifest.write_text(json.dumps(value))
+    manifest.write_text(json.dumps(value), encoding="utf-8")
     with pytest.raises(PreflightError):
         verify_draft(package)
     library = (tmp_path / "native").resolve()
@@ -159,12 +159,12 @@ def test_rehashed_semantic_corruption_is_rejected(tmp_path, defect):
     document.acts[0].items[0].subtitles = [
         Subtitle(subtitle_id="caption", start_us=0, duration_us=700_000, text="字幕😀")
     ]
-    path.write_text(serialize_cutlist(document))
+    path.write_text(serialize_cutlist(document), encoding="utf-8")
     package = export_jianying(config, document, path, name="test").draft_path
     entry = package / "draft_info.json"
-    content = json.loads(entry.read_text())
+    content = json.loads(entry.read_text(encoding="utf-8"))
     manifest_path = package / "export-manifest.json"
-    manifest = json.loads(manifest_path.read_text())
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if defect in {"text", "utf16"}:
         rich = json.loads(content["materials"]["texts"][0]["content"])
         if defect == "text":
@@ -176,16 +176,16 @@ def test_rehashed_semantic_corruption_is_rejected(tmp_path, defect):
         next(iter(manifest["source_assets"].values()))["sha256"] = "0" * 64
     elif defect == "registration":
         entry = package / "draft_meta_info.json"
-        content = json.loads(entry.read_text())
+        content = json.loads(entry.read_text(encoding="utf-8"))
         content["draft_materials"][0]["value"] = []
     elif defect == "malformed":
         content["tracks"][0]["segments"][0]["common_keyframes"] = [None]
     else:
         content["materials"]["videos"][0]["width"] += 1
-    entry.write_text(json.dumps(content))
+    entry.write_text(json.dumps(content), encoding="utf-8")
     record = next(r for r in manifest["files"] if r["relative_path"] == entry.name)
     record.update(size=entry.stat().st_size, sha256=sha256_file(entry))
-    manifest_path.write_text(json.dumps(manifest))
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     with pytest.raises(PreflightError):
         verify_draft(package)
 
@@ -203,7 +203,7 @@ def test_still_changed_after_dimensions_were_read_is_rejected(tmp_path, monkeypa
             item_id="image", kind="still", image_path=str(still), timeline_duration_us=400_000
         )
     )
-    path.write_text(serialize_cutlist(document))
+    path.write_text(serialize_cutlist(document), encoding="utf-8")
     real = DraftBuilder.build
 
     def replace(builder):
