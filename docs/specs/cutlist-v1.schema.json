@@ -252,6 +252,15 @@
           "minimum": 0,
           "title": "Safe Area Percent",
           "type": "integer"
+        },
+        "style": {
+          "default": "standard",
+          "enum": [
+            "standard",
+            "minimal"
+          ],
+          "title": "Style",
+          "type": "string"
         }
       },
       "title": "SubtitlePolicy",

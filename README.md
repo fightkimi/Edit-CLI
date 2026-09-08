@@ -52,6 +52,14 @@ the render-review Skill is written for this CLI. No alternate renderer or automa
 is installed. Skills guide decisions and review; they do not by themselves prove better output or
 add unsupported effects. See the [selection and integration record](docs/research/2026-09-05-output-quality-skills.md).
 
+The CLI provides `cutlist speech-check` for word-boundary diagnostics, `cutlist set-range` for
+source-anchored timing revisions, and `cutlist captions` for Chinese-aware cue splitting and
+standard/minimal subtitle presets. These write validated revisions under
+`artifact_root/cutlists/revisions/`; `--dry-run` is available as a global option. Partial subtitle
+cuts and overflowing text are rejected. Missing word evidence and estimated cue timing are reported
+for review. `render --item ID --context-items 1 --profile preview` includes neighboring items for
+reviewing a join. See the [quality command contract](docs/specs/cli-contract-v1.md).
+
 ## Implemented commands
 
 ```bash

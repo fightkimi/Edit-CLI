@@ -1,5 +1,11 @@
 # Render run protocol v1
 
+Context preview extension: `render --item ID --context-items 1|2 --profile preview` keeps
+`selection.itemId` as the requested center item, records the actual neighboring sequence in
+`selection.itemIds`, and adds nonzero `selection.contextItems`. Omitted/zero context retains the
+original selection shape. QC uses the recorded item sequence. Text-raster and item-cache revisions
+invalidate pre-fix rasters and encodes after the text-integrity/CRF-zero correction.
+
 Every non-dry render that passes cut-list preflight writes
 `artifacts/renders/runs/<run_id>.json`. This manifest is execution evidence; it is not an editable
 project-status flag.

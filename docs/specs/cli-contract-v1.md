@@ -32,6 +32,9 @@ interview-edit sync
 interview-edit cutlist scaffold
 interview-edit cutlist inspect
 interview-edit cutlist validate
+interview-edit cutlist set-range
+interview-edit cutlist captions
+interview-edit cutlist speech-check
 
 interview-edit render
 interview-edit qc
@@ -42,7 +45,7 @@ interview-edit version show
 interview-edit version verify
 ```
 
-M5 implements every command shown above. No nonfunctional placeholder is exposed.
+Every command shown above is implemented. No nonfunctional placeholder is exposed.
 
 ## M1 behavior
 
@@ -167,7 +170,9 @@ interview-edit cutlist scaffold --project PATH
 
 - Without `--asset`, creates one blank act at `cutlists/revisions/cutlist-v001.yaml`.
 - With `--asset`, requires a current checksum-valid corrected transcript and creates chronological
-  primary-item/subtitle placeholders. It makes no narrative or model decisions.
+  primary items and Chinese-aware subtitle cues. Matching word timestamps are used when available;
+  otherwise times are apportioned within the segment and `estimatedSubtitleCount` reports this.
+  It makes no narrative or model decisions.
 - Output remains inside the editing project. Existing content is not replaced without `--force`.
 
 ### `cutlist inspect`
@@ -195,7 +200,7 @@ interview-edit cutlist validate --project PATH --cutlist PATH
 
 ```text
 interview-edit render --project PATH --cutlist PATH
-  [--act ID] [--item ID] [--profile preview|master]
+  [--act ID] [--item ID] [--context-items 0|1|2] [--profile preview|master]
   [--output PATH] [--resume] [--force] [--json]
 ```
 
@@ -213,6 +218,53 @@ interview-edit render --project PATH --cutlist PATH
   cannot render.
 - Writes one terminal run manifest with input fingerprints, cache decisions, environment, exact
   FFmpeg arguments/version, encoder, output checksum, and success/failure/interruption state.
+- `--context-items` requires `--item` and profile `preview`. It includes up to that many neighbors
+  on each side in document order, limited by an optional `--act`. It does not write or alter the
+  cut-list. The output filename includes `contextN`, and manifest `selection.itemIds` records the
+  actual sequence. Nonzero context also adds `selection.contextItems`; zero preserves the old
+  selection shape. This supports visual/listening review, not automatic quality approval.
+
+### Output-quality revision commands
+
+```text
+interview-edit cutlist set-range --project PATH --cutlist PATH --item ID
+  --in-us INTEGER --out-us INTEGER [--output NAME_OR_PATH] [--json]
+interview-edit cutlist captions --project PATH --cutlist PATH [--item ID]
+  [--max-chars 2..80] [--style standard|minimal] [--output NAME_OR_PATH] [--json]
+interview-edit cutlist speech-check --project PATH --cutlist PATH [--item ID] [--json]
+```
+
+- `set-range` and `captions` create new validated YAML revisions under
+  `artifact_root/cutlists/revisions/`. A relative `--output` is relative to that directory; absolute
+  outputs must stay within it without symlinks. Existing outputs are never replaced, including with
+  global `--force`. Global `--dry-run` validates the proposal and writes nothing; `artifacts` is empty.
+- JSON returns `cutlistPath`, affected `itemIds`, `dryRun` and content-safe warnings. Relative image
+  and font paths are rebased so they still resolve to the same assets. The original cut-list,
+  transcripts, source files and frozen versions are preserved. Status considers both legacy
+  project-local and new artifact-root revision directories when suggesting the latest cut-list.
+- `set-range` preserves source-time anchors for subtitles, camera cuts and overlays. Ranges outside
+  the new item disappear; overlapping camera/visual ranges are clipped, including corresponding
+  B-roll source in/out. Partially clipped subtitles fail with `subtitle_partial_trim` rather than
+  showing text that no longer matches audio. Split or revise the cue before retrying. Existing
+  transitions remain declared and must still pass pair/duration validation.
+- Word timing, when available for the same audio source, blocks a new boundary inside a word.
+  Missing timing and separate audio mappings are explicitly unverified. No phoneme alignment,
+  audio-activity refinement or automatic narrative decision is claimed.
+- `captions` splits existing text at punctuation and a soft length target (default 18). Decimal
+  numbers and common units remain intact. When word text matches the edited cue, whole-word times
+  are preserved; otherwise `subtitle_timing_estimated` marks proportional timing within the existing
+  cue. It never stretches the item or silently rewrites the spoken claim. Cue density above a
+  20 characters/second review heuristic produces `subtitle_readability_review`; it is not a
+  universal language standard or an approval gate. `--style` applies globally and cannot be combined
+  with `--item`. Whitespace is normalized; all non-whitespace text must survive.
+- `speech-check` is read-only. It returns `checkedItemCount`, `unverifiedItemIds`, `findings`,
+  `wordBoundaryStatus` (`clear|unverified|needs_revision`) and `listeningVerified: false`. Findings
+  contain IDs, source times and outward word-boundary suggestions, never recognized text. Missing
+  timing is a warning; detected word-internal cuts return exit 3. Stale transcript checksums also
+  fail with exit 3. `clear` means only that known word intervals do not cross the selected edges.
+- Any validation failure prevents revision publication. Overflowing titles/subtitles fail preflight
+  as `text_layout_overflow`, before FFmpeg starts. The same condition is represented in QC when
+  reviewing an older output.
 
 ## M5 behavior
 

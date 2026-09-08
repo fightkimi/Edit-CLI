@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from interview_edit.adapters.filesystem import sha256_file
 from interview_edit.config.models import ProjectConfig
+from interview_edit.cutlist.captions import split_subtitle
 from interview_edit.errors import PathSafetyError, PreflightError, UsageError
 from interview_edit.ingest.service import read_media_index
 from interview_edit.models.cutlist import Act, CutList, Subtitle, TimelineItem, TimelineItemKind
@@ -33,6 +34,7 @@ class ScaffoldResult:
     output_path: Path
     from_transcript: bool
     dry_run: bool
+    estimated_subtitle_count: int = 0
 
 
 def resolve_cutlist_path(project_root: Path, path: Path) -> Path:
@@ -143,6 +145,7 @@ def scaffold_cutlist(request: ScaffoldRequest) -> ScaffoldResult:
         )
 
     items: list[TimelineItem] = []
+    estimated_count = 0
     if request.asset_id is not None:
         index = read_media_index(request.config)
         assert index is not None
@@ -164,6 +167,10 @@ def scaffold_cutlist(request: ScaffoldRequest) -> ScaffoldResult:
                 duration_us=duration,
                 text=segment.text,
             )
+            subtitles, estimated = split_subtitle(
+                subtitle, words=segment.words, source_in_us=segment.start_us
+            )
+            estimated_count += len(subtitles) if estimated else 0
             items.append(
                 TimelineItem(
                     item_id=f"item_{position:04d}",
@@ -174,7 +181,7 @@ def scaffold_cutlist(request: ScaffoldRequest) -> ScaffoldResult:
                     timeline_duration_us=duration,
                     audio_source=asset.asset_id if asset.audio_streams else None,
                     base_camera=asset.camera_id,
-                    subtitles=[subtitle],
+                    subtitles=subtitles,
                 )
             )
 
@@ -191,6 +198,7 @@ def scaffold_cutlist(request: ScaffoldRequest) -> ScaffoldResult:
         output_path=output,
         from_transcript=request.asset_id is not None,
         dry_run=request.dry_run,
+        estimated_subtitle_count=estimated_count,
     )
 
 

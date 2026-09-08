@@ -174,6 +174,7 @@ class SubtitlePolicy(CutListModel):
     enabled: bool = True
     language: str = Field(default="zh", min_length=1, max_length=32)
     safe_area_percent: int = Field(default=5, ge=0, le=25)
+    style: Literal["standard", "minimal"] = "standard"
 
 
 class CutList(CutListModel):

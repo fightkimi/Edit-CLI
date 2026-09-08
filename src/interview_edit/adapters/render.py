@@ -75,9 +75,10 @@ def select_video_encoder(
 
 def video_codec_args(profile: RenderProfile, encoder: str) -> list[str]:
     if encoder == "libx264":
-        return ["-c:v", encoder, "-preset", "medium", "-crf", str(profile.crf or 20)]
+        crf = profile.crf if profile.crf is not None else 20
+        return ["-c:v", encoder, "-preset", "medium", "-crf", str(crf)]
     if encoder == "h264_videotoolbox":
-        quality = max(1, min(100, 82 - (profile.crf or 18)))
+        quality = max(1, min(100, 82 - (profile.crf if profile.crf is not None else 18)))
         return ["-c:v", encoder, "-q:v", str(quality)]
     result = ["-c:v", encoder]
     if profile.crf is not None:
