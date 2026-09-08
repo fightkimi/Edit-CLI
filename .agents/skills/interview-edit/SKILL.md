@@ -1,6 +1,6 @@
 ---
 name: interview-edit
-description: Orchestrate the repository's local interview-edit CLI for substantive speech-led creator-video work. Use when a user asks to set up or inspect an editing project, index footage, build proxies, transcribe, synchronize cameras, plan or revise a cut-list, render or review a preview, diagnose QC, create an approved master, or freeze and verify a release for interviews, talking-head videos, tutorials, reviews, or vlogs. Do not use for generic playback, online-video downloads, image generation, standalone FFmpeg questions, publishing, or arbitrary film/television post-production.
+description: Orchestrate the repository's local interview-edit CLI for substantive speech-led creator-video work. Use when a user asks to set up or inspect an editing project, index footage, build proxies, transcribe, synchronize cameras, plan or revise a cut-list, render or review a preview, diagnose QC, export an editable Jianying draft, create an approved master, or freeze and verify a release for interviews, talking-head videos, tutorials, reviews, or vlogs. Do not use for generic playback, online-video downloads, image generation, standalone FFmpeg questions, publishing, or arbitrary film/television post-production.
 metadata:
   version: "0.6.0"
 ---
@@ -35,6 +35,7 @@ Load only the references needed for the selected route:
 | improve script, pacing, captions, audio or visual quality | [quality-skills.md](references/quality-skills.md) |
 | create/revise narrative or adapt creator format | [editorial-guidance.md](references/editorial-guidance.md), [cutlist-schema.md](references/cutlist-schema.md) |
 | inspect transcript, thumbnail, contact sheet, or QC frame | [privacy.md](references/privacy.md) |
+| keep editing in Jianying on Mac/Windows | [jianying-handoff.md](references/jianying-handoff.md) |
 | render, review, approve, recover, or resume | [review-and-recovery.md](references/review-and-recovery.md) |
 | release QC or freeze | [qc-policy.md](references/qc-policy.md), [review-and-recovery.md](references/review-and-recovery.md) |
 

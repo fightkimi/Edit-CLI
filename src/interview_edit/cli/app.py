@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 import typer
 
 from interview_edit import __version__
+from interview_edit.adapters.jianying_app import host_platform, inspect_jianying
 from interview_edit.cli.output import emit, emit_expected_error
 from interview_edit.config.loader import config_path_for, load_project_config
 from interview_edit.config.models import ProjectConfig
@@ -26,8 +27,10 @@ from interview_edit.cutlist.service import (
 )
 from interview_edit.cutlist.validation import validate_cutlist
 from interview_edit.doctor.service import run_doctor
-from interview_edit.errors import InterviewEditError, UsageError
+from interview_edit.errors import DependencyError, InterviewEditError, PathSafetyError, UsageError
 from interview_edit.exit_codes import ExitCode
+from interview_edit.export.jianying import export_jianying
+from interview_edit.export.jianying_install import install_draft
 from interview_edit.ingest.service import IngestRequest, ingest_media, read_media_index
 from interview_edit.models.cutlist import CutList
 from interview_edit.models.protocol import (
@@ -88,6 +91,12 @@ version_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(version_app, name="version")
+export_app = typer.Typer(help="Export editable native projects.", no_args_is_help=True)
+app.add_typer(export_app, name="export")
+jianying_app = typer.Typer(
+    help="Inspect and install local Jianying draft packages.", no_args_is_help=True
+)
+app.add_typer(jianying_app, name="jianying")
 
 
 def _show_version(value: bool) -> None:
@@ -1560,6 +1569,177 @@ def version_verify_command(
     )
     if not passed:
         raise typer.Exit(ExitCode.PREFLIGHT_FAILED)
+
+
+@export_app.command("jianying")
+def jianying_export_command(
+    ctx: typer.Context,
+    name: Annotated[str, typer.Option("--name", help="Name for the new editable draft.")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    cutlist: Annotated[Path | None, typer.Option("--cutlist")] = None,
+    target: Annotated[Literal["macos", "windows", "both"], typer.Option("--platform")] = "both",
+    bundle_media: Annotated[
+        bool,
+        typer.Option(
+            "--bundle-media/--reference-media",
+            help="Copy original media/fonts for a portable editable project.",
+        ),
+    ] = True,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Create an experimental editable Jianying draft, never a flattened video."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config, path, document, _ = _editing_context(options, project, cutlist)
+        result = export_jianying(
+            config,
+            document,
+            path,
+            name=name,
+            target=target,
+            bundle_media=bundle_media,
+            dry_run=options.dry_run,
+        )
+    except InterviewEditError as error:
+        _fail(error, command="export jianying", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError("jianying_io_failed", "Could not read or write draft resources."),
+            command="export jianying",
+            json_output=machine,
+        )
+        return
+    emit(
+        JsonEnvelope(
+            ok=True,
+            command="export jianying",
+            data={
+                "draftPath": str(result.draft_path),
+                "platform": target,
+                "bundledMedia": bundle_media,
+                "resourceBytes": result.resource_bytes,
+                "dryRun": result.dry_run,
+                "nativeValidation": "not_run",
+                "exportId": result.manifest.export_id if result.manifest else None,
+            },
+            warnings=[
+                WarningPayload(
+                    code="jianying_client_unverified",
+                    message="Native app import, editing and rendering have not been verified.",
+                ),
+                WarningPayload(
+                    code="jianying_style_approximation",
+                    message="Review native text/audio; CLI master processing is not applied.",
+                ),
+            ],
+            artifacts=[]
+            if result.dry_run
+            else [ArtifactReference(kind="jianying-draft", path=str(result.draft_path))],
+            next=["interview-edit jianying doctor --json"],
+        ),
+        json_output=machine,
+        human_lines=[
+            f"{'Would export' if result.dry_run else 'Exported'} draft: {result.draft_path}",
+            "Native app validation: not run; open and review it in Jianying.",
+        ],
+    )
+
+
+@jianying_app.command("doctor")
+def jianying_doctor_command(
+    ctx: typer.Context,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Check the local client and draft location without installation or network use."""
+    try:
+        data = inspect_jianying()
+    except InterviewEditError as error:
+        _fail(
+            error, command="jianying doctor", json_output=json_output or _options(ctx).json_output
+        )
+        return
+    ok = data["installed"]
+    emit(
+        JsonEnvelope(
+            ok=ok,
+            command="jianying doctor",
+            data=data,
+            error=None
+            if ok
+            else ErrorPayload(
+                code="jianying_missing", message="Jianying is not installed in a detected location."
+            ),
+        ),
+        json_output=json_output or _options(ctx).json_output,
+        human_lines=[f"Jianying installed: {ok}", f"Draft location: {data['draftRoot']}"],
+    )
+    if not ok:
+        raise typer.Exit(ExitCode.DEPENDENCY_MISSING)
+
+
+@jianying_app.command("install")
+def jianying_install_command(
+    ctx: typer.Context,
+    draft: Annotated[
+        Path, typer.Option("--draft", help="Exported package, before editing in Jianying.")
+    ],
+    draft_root: Annotated[
+        Path | None, typer.Option("--draft-root", help="Explicit existing native draft library.")
+    ] = None,
+    target: Annotated[Literal["macos", "windows"] | None, typer.Option("--platform")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Install a verified bundled package as a new local project without touching old drafts."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        if draft_root is None:
+            client = inspect_jianying()
+            if not client["installed"]:
+                raise DependencyError(
+                    "jianying_missing", "Install Jianying and create its draft directory first."
+                )
+            draft_root = Path(client["draftRoot"])
+        result = install_draft(
+            draft, draft_root, target or host_platform(), dry_run=options.dry_run
+        )
+    except InterviewEditError as error:
+        _fail(error, command="jianying install", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError("jianying_io_failed", "Could not install the draft package."),
+            command="jianying install",
+            json_output=machine,
+        )
+        return
+    emit(
+        JsonEnvelope(
+            ok=True,
+            command="jianying install",
+            data={
+                "draftPath": str(result),
+                "nativeValidation": "not_run",
+                "dryRun": options.dry_run,
+            },
+            artifacts=[]
+            if options.dry_run
+            else [ArtifactReference(kind="installed-jianying-draft", path=str(result))],
+            warnings=[
+                WarningPayload(
+                    code="jianying_client_unverified",
+                    message="Open the new draft in Jianying and verify editable tracks.",
+                )
+            ],
+        ),
+        json_output=machine,
+        human_lines=[
+            f"{'Would install' if options.dry_run else 'Installed'}: {result}",
+            "Open Jianying to review this new draft; restart it if the list is stale.",
+        ],
+    )
 
 
 def main() -> None:

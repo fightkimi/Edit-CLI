@@ -39,6 +39,10 @@ interview-edit cutlist speech-check
 interview-edit render
 interview-edit qc
 
+interview-edit export jianying
+interview-edit jianying doctor
+interview-edit jianying install
+
 interview-edit version freeze
 interview-edit version list
 interview-edit version show
@@ -310,6 +314,9 @@ interview-edit version verify --project PATH VERSION_ID [--json]
   symlinks, and unexpected payloads. Any integrity issue returns exit 3.
 
 ## Exit codes
+
+Experimental editable-project export and native draft-library handoff are specified separately in
+[jianying-draft-v1.md](jianying-draft-v1.md). These commands do not claim a successful native-app render.
 
 | Code | Meaning |
 |---:|---|

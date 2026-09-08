@@ -1,0 +1,50 @@
+{
+  "origin": "https://github.com/duoec/duo-video",
+  "origin_commit": "ef4eb46c823910553f901649f2f13fd7575e748f",
+  "retrieved_from": "https://github.com/zenstory-ai/video-recap-skills",
+  "retrieval_commit": "ec369e7e38866f23e953903fb30de9638a900e57",
+  "license": "MIT",
+  "changes": "Removed example device identifiers, OS version, timestamps, durations and sizes; data templates only.",
+  "files": [
+    {
+      "file": "project.json",
+      "upstream_file": "empty_jy_project_info.json",
+      "upstream_sha256": "6a60397528bf33c1adfe13d17fc441837232a3c15df9d4a4785e3e03d6d86985"
+    },
+    {
+      "file": "meta.json",
+      "upstream_file": "empty_draft_meta_info.json",
+      "upstream_sha256": "ea2d503b2c6b76a39e8d2ae9ba344608204d18675f88a01cc628898ca15bfbde"
+    },
+    {
+      "file": "meta_material.json",
+      "upstream_file": "empty_jy_meta_material_value.json",
+      "upstream_sha256": "e790f40b4779dac860cb8d28e3b54327683e17e96a03ccc4487f7fcec5d3a9f3"
+    },
+    {
+      "file": "video.json",
+      "upstream_file": "empty_jy_material_video.json",
+      "upstream_sha256": "d99fd9767b80cb5403f9801f431e7e2f048440a731c1994677737f2470dcbe99"
+    },
+    {
+      "file": "audio.json",
+      "upstream_file": "empty_yj_material_audio.json",
+      "upstream_sha256": "14fe738bbf03128537c2be0a44cc011487539d8ce6d0374123f86540e35762f8"
+    },
+    {
+      "file": "text.json",
+      "upstream_file": "empty_yj_material_text.json",
+      "upstream_sha256": "d70bbce903e07b025a7235b0bfc7c2acc633257105050fc21ce7b5ada296a45b"
+    },
+    {
+      "file": "text_style.json",
+      "upstream_file": "empty_jy_text_styles.json",
+      "upstream_sha256": "e23db2336b109bc471d94d5c1af41ecee3528fe322966f4ecc52b9738c9abfd3"
+    },
+    {
+      "file": "segment.json",
+      "upstream_file": "empty_jy_segment.json",
+      "upstream_sha256": "c5caef48205ff09b3199ad2871e6b6ede71c018031a8fe2c9285f03a7cc83140"
+    }
+  ]
+}
