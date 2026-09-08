@@ -8,6 +8,7 @@ from typing import Protocol
 from PIL import Image
 
 from interview_edit.adapters.artifacts import validated_video_proxy
+from interview_edit.adapters.text import inspect_text_layout
 from interview_edit.config.models import ProjectConfig
 from interview_edit.errors import InterviewEditError
 from interview_edit.ingest.service import read_media_index
@@ -140,9 +141,7 @@ def _font_for(config: ProjectConfig, cutlist_path: Path, *values: str | None) ->
     return canonical(config.fonts[0]) if config.fonts else None
 
 
-def _sync_report(
-    config: ProjectConfig, index: MediaIndex, take_id: str
-) -> SyncReport:
+def _sync_report(config: ProjectConfig, index: MediaIndex, take_id: str) -> SyncReport:
     return load_current_sync_report(config, index, take_id)
 
 
@@ -527,6 +526,43 @@ def validate_cutlist(
                             "A readable local font is required for subtitles.",
                             path=f"{subtitle_path}.font_path",
                         )
+
+            if profile is not None:
+                texts = [(item.title_text, item.font_path, False)]
+                texts.extend(
+                    (overlay.text, overlay.font_path or item.font_path, False)
+                    for overlay in item.overlays
+                    if overlay.kind is OverlayKind.TITLE
+                )
+                if cutlist.subtitle_policy.enabled:
+                    texts.extend(
+                        (subtitle.text, subtitle.font_path or item.font_path, True)
+                        for subtitle in item.subtitles
+                    )
+                for text, declared_font, is_subtitle in texts:
+                    font = _font_for(config, resolved_path, declared_font)
+                    if not text or font is None or not font.is_file():
+                        continue
+                    try:
+                        layout = inspect_text_layout(
+                            text=text,
+                            font_path=font,
+                            width=profile.width,
+                            height=profile.height,
+                            placement="subtitle" if is_subtitle else "center",
+                            safe_area_percent=cutlist.subtitle_policy.safe_area_percent,
+                            style=cutlist.subtitle_policy.style if is_subtitle else "standard",
+                        )
+                        if layout.overflow:
+                            _issue(
+                                issues,
+                                "text_layout_overflow",
+                                "Text exceeds the layout; split it before rendering.",
+                                path=item_path,
+                                lineCount=layout.line_count,
+                            )
+                    except InterviewEditError as exc:
+                        _issue(issues, exc.code, exc.message, path=item_path)
 
         for item_position, item in enumerate(act.items):
             item_path = f"{act_path}.items[{item_position}]"

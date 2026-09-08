@@ -110,7 +110,7 @@ def artifact_path(artifact_root: Path, *parts: str) -> Path:
     return validate_artifact_path(artifact_root.joinpath(*parts), artifact_root)
 
 
-def atomic_write_text(path: Path, content: str) -> None:
+def atomic_write_text(path: Path, content: str, *, overwrite: bool = True) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary: str | None = None
     try:
@@ -126,7 +126,12 @@ def atomic_write_text(path: Path, content: str) -> None:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        if overwrite:
+            os.replace(temporary, path)
+        else:
+            # Hard-link publication fails atomically if a concurrent writer already won.
+            os.link(temporary, path)
+            os.unlink(temporary)
         temporary = None
     except OSError as exc:
         raise PathSafetyError(

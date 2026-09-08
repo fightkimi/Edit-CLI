@@ -16,3 +16,8 @@ Start from the user's concrete criticism and existing preview. Preserve the prev
 a comparison. Report the observed defect, revised ranges, rendered run and QC, and any playback or
 visual review still required. Do not claim output improved from installing Skills or passing static
 checks. An absent animation, reframing or audio feature must be identified as an engine gap.
+
+The CLI now provides cutlist speech-check, cutlist set-range, cutlist captions, and optional
+render --item ID --context-items 1 for join review. See cli-reference.md for current semantics.
+Load the relevant focused Skill, then execute these operations through the CLI. An estimated subtitle
+time or unknown speech boundary must remain visible in the review summary.

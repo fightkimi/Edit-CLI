@@ -157,6 +157,16 @@ sum of item durations in V1.
 
 ## Strict render preflight
 
+`subtitle_policy.style` is an optional `standard|minimal` preset, defaulting to `standard`.
+Standard retains a dark caption background; minimal uses smaller outlined text without the box.
+Both use the declared local font and safe-area policy; title cards retain their existing style.
+This is a cut-list-wide policy, not per-word animation or arbitrary CSS styling. Unknown styles
+remain schema errors. Style participates in text-raster and item cache identity.
+
+Text is wrapped using measured font width without truncating content. A layout exceeding four
+lines or containing a glyph wider than the available line fails with `text_layout_overflow`.
+It must be split or revised before rendering; a partial raster must never replace an output.
+
 `cutlist validate` and `render` enforce the same preflight:
 
 - schema version and unknown-key rejection;
@@ -166,6 +176,7 @@ sum of item durations in V1.
 - camera/take membership, sync report camera/asset identity, and non-uncertain status;
 - in-item bounds and non-overlap for camera cuts, overlays, and subtitles;
 - existing image and font assets;
+- complete text layout without silent truncation;
 - identical adjacent transition pairs and maximum duration;
 - configured render profile, positive rational output frame rate, and even H.264 dimensions.
 

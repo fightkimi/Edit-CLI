@@ -11,7 +11,7 @@ interview-edit [GLOBAL OPTIONS] ingest
 interview-edit [GLOBAL OPTIONS] proxy build
 interview-edit [GLOBAL OPTIONS] transcribe
 interview-edit [GLOBAL OPTIONS] sync
-interview-edit [GLOBAL OPTIONS] cutlist scaffold|inspect|validate
+interview-edit [GLOBAL OPTIONS] cutlist scaffold|inspect|validate|set-range|captions|speech-check
 interview-edit [GLOBAL OPTIONS] render
 interview-edit [GLOBAL OPTIONS] qc
 interview-edit [GLOBAL OPTIONS] version freeze|list|show|verify
@@ -50,7 +50,7 @@ interview-edit cutlist inspect --project PATH --cutlist PATH [--act ID] [--item 
 interview-edit cutlist validate --project PATH --cutlist PATH \
   [--profile preview|master] --json
 interview-edit render --project PATH --cutlist PATH [--act ID] [--item ID] \
-  [--profile preview|master] [--output PATH] [--resume] --json
+  [--context-items 0|1|2] [--profile preview|master] [--output PATH] [--resume] --json
 interview-edit qc --project PATH [--run RUN_ID] [--policy preview|release] --json
 interview-edit version freeze --project PATH --run RUN_ID --approve [--note TEXT] --json
 interview-edit version list --project PATH --json
@@ -82,3 +82,26 @@ detector logs; it omits content text and preserves evidence hashes. Release QC i
 master and only when `state` is `passed`. Do not issue `version freeze` until the user separately
 approves that exact master run. `--approve` records that approval but never bypasses release QC.
 Immediately run `version verify` after freezing and report the resulting version ID.
+
+## Output-quality revisions
+
+Check subcommand help before using the quality commands:
+
+```text
+interview-edit cutlist speech-check --project PATH --cutlist PATH [--item ID] --json
+interview-edit cutlist captions --project PATH --cutlist PATH [--item ID] \
+  [--max-chars N] [--style standard|minimal] [--output NAME] --json
+interview-edit cutlist set-range --project PATH --cutlist PATH --item ID \
+  --in-us INTEGER --out-us INTEGER [--output NAME] --json
+```
+
+Revision commands write new YAML under artifact_root/cutlists/revisions; relative outputs are names
+within that directory. Global --dry-run writes nothing. Existing revisions cannot be overwritten.
+set-range moves item-relative components with the source range, clips B-roll source ranges, and
+rejects partial subtitle trimming or known word-internal cuts. Split/revise the affected cue first.
+captions preserves text; mismatched/missing word timing is explicitly estimated. A style change is
+global and cannot be combined with --item. speech-check is read-only and does not establish natural
+listening quality, audio-safe phonemes, or separate-audio alignment. Report unverified items.
+
+After validation, use render --item ID --context-items 1 --profile preview to include neighboring
+items when reviewing a join. Run preview QC and inspect the result. Master/freeze gates still apply.

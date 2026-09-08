@@ -3,13 +3,20 @@ from __future__ import annotations
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import typer
 
 from interview_edit import __version__
 from interview_edit.cli.output import emit, emit_expected_error
 from interview_edit.config.loader import config_path_for, load_project_config
+from interview_edit.config.models import ProjectConfig
+from interview_edit.cutlist.editing import (
+    RevisionResult,
+    check_speech,
+    set_source_range,
+    split_captions,
+)
 from interview_edit.cutlist.service import (
     ScaffoldRequest,
     inspect_cutlist,
@@ -22,6 +29,7 @@ from interview_edit.doctor.service import run_doctor
 from interview_edit.errors import InterviewEditError, UsageError
 from interview_edit.exit_codes import ExitCode
 from interview_edit.ingest.service import IngestRequest, ingest_media, read_media_index
+from interview_edit.models.cutlist import CutList
 from interview_edit.models.protocol import (
     ArtifactReference,
     ErrorPayload,
@@ -320,7 +328,16 @@ def status_command(
         next_commands.append(f"interview-edit transcribe --project {project_arg} --resume")
     else:
         cutlists = sorted(
-            (config_path_for(selected).parent / "cutlists" / "revisions").glob("*.yaml")
+            [
+                path
+                for directory in (
+                    project_root / "cutlists" / "revisions",
+                    config.artifact_root / "cutlists" / "revisions",
+                )
+                for pattern in ("*.yaml", "*.yml")
+                for path in directory.glob(pattern)
+            ],
+            key=lambda path: (path.stat().st_mtime_ns, str(path)),
         )
         if not cutlists:
             next_commands.append(f"interview-edit cutlist scaffold --project {project_arg}")
@@ -842,6 +859,7 @@ def cutlist_scaffold_command(
         data={
             "cutlistPath": str(result.output_path),
             "fromTranscript": result.from_transcript,
+            "estimatedSubtitleCount": result.estimated_subtitle_count,
             "actCount": len(result.cutlist.acts),
             "itemCount": sum(len(act.items) for act in result.cutlist.acts),
             "dryRun": result.dry_run,
@@ -980,6 +998,174 @@ def cutlist_validate_command(
         raise typer.Exit(ExitCode.PREFLIGHT_FAILED)
 
 
+def _editing_context(
+    options: GlobalOptions,
+    project: Path | None,
+    cutlist: Path | None,
+) -> tuple[ProjectConfig, Path, CutList, Path]:
+    selected = _selected_project(project, options.project)
+    if cutlist is None:
+        raise UsageError("cutlist_required", "Provide a cut-list with --cutlist PATH.")
+    root = config_path_for(selected).parent
+    path = resolve_cutlist_path(root, cutlist)
+    return load_project_config(selected), path, load_cutlist(path), root
+
+
+def _emit_revision(result: RevisionResult, command: str, project: Path, machine: bool) -> None:
+    path = shlex.quote(str(result.output_path))
+    project_arg = shlex.quote(str(project))
+    envelope = JsonEnvelope(
+        ok=True,
+        command=command,
+        data={
+            "cutlistPath": str(result.output_path),
+            "itemIds": result.item_ids,
+            "dryRun": result.dry_run,
+        },
+        warnings=[WarningPayload.model_validate(w) for w in result.warnings],
+        artifacts=[]
+        if result.dry_run
+        else [ArtifactReference(kind="cutlist", path=str(result.output_path))],
+        next=[f"interview-edit render --project {project_arg} --cutlist {path} --profile preview"],
+    )
+    emit(
+        envelope,
+        json_output=machine,
+        human_lines=[
+            f"{'Would write' if result.dry_run else 'Wrote'} revision: {result.output_path}",
+            *[f"Warning [{w['code']}]: {w['message']}" for w in result.warnings],
+        ],
+    )
+
+
+@cutlist_app.command("set-range")
+def cutlist_set_range_command(
+    ctx: typer.Context,
+    item: Annotated[str, typer.Option("--item", help="Item whose source range should change.")],
+    in_us: Annotated[
+        int, typer.Option("--in-us", min=0, help="New source start in integer microseconds.")
+    ],
+    out_us: Annotated[
+        int, typer.Option("--out-us", min=1, help="New source end in integer microseconds.")
+    ],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    cutlist: Annotated[Path | None, typer.Option("--cutlist")] = None,
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", help="New YAML name under artifact cutlists/revisions."),
+    ] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Write a validated revision while keeping child timing anchored to the source."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config, path, document, root = _editing_context(options, project, cutlist)
+        result = set_source_range(
+            config,
+            document,
+            path,
+            item_id=item,
+            source_in_us=in_us,
+            source_out_us=out_us,
+            output=output,
+            dry_run=options.dry_run,
+        )
+    except InterviewEditError as error:
+        _fail(error, command="cutlist set-range", json_output=machine)
+        return
+    _emit_revision(result, "cutlist set-range", root, machine)
+
+
+@cutlist_app.command("captions")
+def cutlist_captions_command(
+    ctx: typer.Context,
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    cutlist: Annotated[Path | None, typer.Option("--cutlist")] = None,
+    item: Annotated[str | None, typer.Option("--item")] = None,
+    max_chars: Annotated[int, typer.Option("--max-chars", min=2, max=80)] = 18,
+    style: Annotated[
+        Literal["standard", "minimal"] | None,
+        typer.Option("--style", help="Whole cut-list subtitle preset."),
+    ] = None,
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", help="New YAML name under artifact cutlists/revisions."),
+    ] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Split existing captions without losing text; report estimated timing explicitly."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config, path, document, root = _editing_context(options, project, cutlist)
+        result = split_captions(
+            config,
+            document,
+            path,
+            item_id=item,
+            max_chars=max_chars,
+            style=style,
+            output=output,
+            dry_run=options.dry_run,
+        )
+    except InterviewEditError as error:
+        _fail(error, command="cutlist captions", json_output=machine)
+        return
+    _emit_revision(result, "cutlist captions", root, machine)
+
+
+@cutlist_app.command("speech-check")
+def cutlist_speech_check_command(
+    ctx: typer.Context,
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    cutlist: Annotated[Path | None, typer.Option("--cutlist")] = None,
+    item: Annotated[str | None, typer.Option("--item")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Inspect transcript word boundaries without writing or exposing recognized text."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config, _, document, _ = _editing_context(options, project, cutlist)
+        data = check_speech(config, document, item)
+    except InterviewEditError as error:
+        _fail(error, command="cutlist speech-check", json_output=machine)
+        return
+    warnings = (
+        [
+            WarningPayload(
+                code="speech_timing_unavailable",
+                message="Some items have no usable word timing; listening is still required.",
+                details={"itemIds": data["unverifiedItemIds"]},
+            )
+        ]
+        if data["unverifiedItemIds"]
+        else []
+    )
+    envelope = JsonEnvelope(
+        ok=data["ok"],
+        command="cutlist speech-check",
+        data=data,
+        warnings=warnings,
+        error=None
+        if data["ok"]
+        else ErrorPayload(
+            code="speech_boundary_invalid", message="One or more cuts land inside a word."
+        ),
+    )
+    emit(
+        envelope,
+        json_output=machine,
+        human_lines=[
+            f"Checked items: {data['checkedItemCount']}; suspect cuts: {len(data['findings'])}",
+            f"Unverified items: {len(data['unverifiedItemIds'])}; listening not verified.",
+        ],
+    )
+    if not data["ok"]:
+        raise typer.Exit(ExitCode.PREFLIGHT_FAILED)
+
+
 @app.command("render")
 def render_command(
     ctx: typer.Context,
@@ -992,6 +1178,15 @@ def render_command(
     ] = None,
     act: Annotated[str | None, typer.Option("--act", help="Render one act ID.")] = None,
     item: Annotated[str | None, typer.Option("--item", help="Render one item ID.")] = None,
+    context_items: Annotated[
+        int,
+        typer.Option(
+            "--context-items",
+            min=0,
+            max=2,
+            help="Neighbor items on each side of --item; preview only.",
+        ),
+    ] = 0,
     profile: Annotated[
         str | None,
         typer.Option("--profile", help="Configured preview or master render profile."),
@@ -1028,6 +1223,7 @@ def render_command(
                 cutlist_path=cutlist_path,
                 act_id=act,
                 item_id=item,
+                context_items=context_items,
                 profile_name=profile,
                 output=output,
                 resume=resume,

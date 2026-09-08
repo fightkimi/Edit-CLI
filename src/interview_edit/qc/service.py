@@ -293,7 +293,19 @@ def _check_text(
                 height=profile.height,
                 placement="subtitle" if placement == "subtitle" else "center",
                 safe_area_percent=cutlist.subtitle_policy.safe_area_percent,
+                style=cutlist.subtitle_policy.style if placement == "subtitle" else "standard",
             )
+            if inspection.overflow:
+                _finding(
+                    findings,
+                    severity,
+                    "text_layout_overflow",
+                    "Text exceeds the supported layout and cannot be displayed completely.",
+                    item=item,
+                    timeline_time_us=time_us,
+                    lineCount=inspection.line_count,
+                    suggested_action="Split the text into shorter cues and render again.",
+                )
             if not inspection.within_safe_area:
                 _finding(
                     findings,

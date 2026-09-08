@@ -70,6 +70,7 @@ class RenderRequest:
     resume: bool = False
     force: bool = False
     dry_run: bool = False
+    context_items: int = 0
 
 
 @dataclass(frozen=True)
@@ -155,7 +156,13 @@ def _canonical_hash(value: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _select_items(cutlist: CutList, act_id: str | None, item_id: str | None) -> list[_SelectedItem]:
+def _select_items(
+    cutlist: CutList, act_id: str | None, item_id: str | None, context_items: int = 0
+) -> list[_SelectedItem]:
+    if context_items < 0 or context_items > 2 or (context_items and item_id is None):
+        raise UsageError(
+            "render_context_invalid", "Context requires --item and a count from 0 to 2."
+        )
     acts = cutlist.acts
     if act_id is not None:
         acts = [act for act in acts if act.act_id == act_id]
@@ -179,6 +186,10 @@ def _select_items(cutlist: CutList, act_id: str | None, item_id: str | None) -> 
         )
     if not selected:
         raise PreflightError("render_selection_empty", "The selected cut-list scope has no items.")
+    if context_items:
+        ordered = [_SelectedItem(act.act_id, item) for act in acts for item in act.items]
+        position = next(i for i, value in enumerate(ordered) if value.item.item_id == item_id)
+        return ordered[max(0, position - context_items) : position + context_items + 1]
     return selected
 
 
@@ -200,10 +211,10 @@ def _output_path(request: RenderRequest, profile_name: str) -> Path:
             suffixes.append(request.act_id)
         if request.item_id:
             suffixes.append(request.item_id)
+        if request.context_items:
+            suffixes.append(f"context{request.context_items}")
         suffixes.append(profile_name)
-        output = artifact_path(
-            request.config.artifact_root, "renders", "-".join(suffixes) + ".mp4"
-        )
+        output = artifact_path(request.config.artifact_root, "renders", "-".join(suffixes) + ".mp4")
     if output.suffix.lower() != ".mp4":
         raise UsageError(
             "render_output_container_unsupported",
@@ -411,17 +422,19 @@ def _text_raster(
     profile: RenderProfile,
     placement: str,
     safe_area_percent: int,
+    style: Literal["standard", "minimal"] = "standard",
 ) -> Path:
     font_hash = sha256_file(font_path)
     cache_key = _canonical_hash(
         {
-            "schema": "text-raster-v2",
+            "schema": "text-raster-v3",
             "text": text,
             "fontSha256": font_hash,
             "width": profile.width,
             "height": profile.height,
             "placement": placement,
             "safeAreaPercent": safe_area_percent,
+            "style": style,
         }
     )
     path = artifact_path(config.artifact_root, "renders", "cache", "text", f"{cache_key}.png")
@@ -434,6 +447,7 @@ def _text_raster(
             height=profile.height,
             placement="subtitle" if placement == "subtitle" else "center",
             safe_area_percent=safe_area_percent,
+            style=style,
         )
     return path
 
@@ -732,6 +746,7 @@ def _build_item(
                     profile=profile,
                     placement="subtitle",
                     safe_area_percent=request.cutlist.subtitle_policy.safe_area_percent,
+                    style=request.cutlist.subtitle_policy.style,
                 )
                 input_index = _add_image_input(args, raster, subtitle.duration_us)
                 label = f"subtitle{position}"
@@ -938,7 +953,11 @@ def render_cutlist(
                 ]
             },
         )
-    selected = _select_items(request.cutlist, request.act_id, request.item_id)
+    if request.context_items and profile_name != "preview":
+        raise UsageError("render_context_preview_only", "Context selection is only for previews.")
+    selected = _select_items(
+        request.cutlist, request.act_id, request.item_id, request.context_items
+    )
     profile = request.config.render_profiles.get(profile_name)
     if profile is None:
         raise PreflightError("render_profile_unknown", f"Unknown render profile: {profile_name}")
@@ -970,9 +989,7 @@ def render_cutlist(
     if probe_command is not None:
         command_log.commands.append(probe_command)
     run_id = _run_id()
-    run_path = artifact_path(
-        request.config.artifact_root, "renders", "runs", f"{run_id}.json"
-    )
+    run_path = artifact_path(request.config.artifact_root, "renders", "runs", f"{run_id}.json")
     cutlist_hash = sha256_file(request.cutlist_path)
     config_hash = _canonical_hash(request.config.model_dump(mode="json"))
     input_fingerprints: dict[str, str] = {}
@@ -1000,6 +1017,7 @@ def render_cutlist(
             "actId": request.act_id,
             "itemId": request.item_id,
             "itemIds": [value.item.item_id for value in selected],
+            **({"contextItems": request.context_items} if request.context_items else {}),
         },
         invocation={
             "resume": request.resume,
@@ -1034,7 +1052,7 @@ def render_cutlist(
             )
             cache_key = _canonical_hash(
                 {
-                    "schema": "render-item-v1",
+                    "schema": "render-item-v2",
                     "item": item.model_dump(mode="json"),
                     "subtitlePolicy": request.cutlist.subtitle_policy.model_dump(mode="json"),
                     "profile": profile.model_dump(mode="json"),
@@ -1042,9 +1060,7 @@ def render_cutlist(
                     "inputs": item_fingerprints,
                 }
             )
-            cache_root = artifact_path(
-                request.config.artifact_root, "renders", "cache", "items"
-            )
+            cache_root = artifact_path(request.config.artifact_root, "renders", "cache", "items")
             cached = None
             if request.resume and not request.force:
                 cached = _cache_manifest(cache_root / f"{cache_key}.json", cache_key)

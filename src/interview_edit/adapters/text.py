@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import importlib
 import os
-import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from interview_edit.errors import DependencyError, ProcessingError
+from interview_edit.errors import DependencyError, PreflightError, ProcessingError
 
 
 @dataclass(frozen=True)
@@ -16,6 +15,8 @@ class TextInspection:
     safe_bounds: tuple[int, int, int, int]
     within_safe_area: bool
     missing_glyph_count: int
+    line_count: int
+    overflow: bool
 
 
 def _pillow() -> tuple[Any, Any, Any]:
@@ -33,20 +34,18 @@ def _pillow() -> tuple[Any, Any, Any]:
 
 
 def _wrapped_lines(draw: Any, text: str, font: Any, max_width: int) -> list[str]:
-    normalized = " ".join(text.split())
-    if not normalized:
-        return [""]
-    estimated = max(1, int(max_width / max(1, draw.textlength("字", font=font))))
     lines: list[str] = []
-    for paragraph in normalized.splitlines() or [normalized]:
-        candidate_lines = textwrap.wrap(
-            paragraph,
-            width=estimated,
-            break_long_words=True,
-            break_on_hyphens=False,
-        ) or [paragraph]
-        lines.extend(candidate_lines)
-    return lines[:4]
+    for paragraph in text.splitlines() or [text]:
+        current = ""
+        for character in " ".join(paragraph.split()):
+            candidate = current + character
+            if current and draw.textlength(candidate, font=font) > max_width:
+                lines.append(current)
+                current = character
+            else:
+                current = candidate
+        lines.append(current)
+    return lines
 
 
 def _missing_glyph_count(font: Any, text: str) -> int:
@@ -75,9 +74,11 @@ def _compose_text_image(
     height: int,
     placement: Literal["center", "subtitle"],
     safe_area_percent: int,
+    style: Literal["standard", "minimal"] = "standard",
 ) -> tuple[Any, TextInspection]:
     image_module, draw_module, font_module = _pillow()
-    font_size = max(20, round(height * (0.072 if placement == "center" else 0.052)))
+    ratio = 0.072 if placement == "center" else (0.044 if style == "minimal" else 0.052)
+    font_size = max(20, round(height * ratio))
     font = font_module.truetype(str(font_path), font_size)
     image = image_module.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = draw_module.Draw(image)
@@ -87,6 +88,18 @@ def _compose_text_image(
     padding_y = round(font_size * 0.45)
     max_width = max(1, min(round(width * 0.82), width - 2 * margin_x - 2 * padding_x))
     lines = _wrapped_lines(draw, text, font, max_width)
+    safe_bounds = (margin_x, margin_y, width - margin_x, height - margin_y)
+    overflow = len(lines) > 4 or any(draw.textlength(line, font=font) > max_width for line in lines)
+    if overflow:
+        # An inspection may report overflow; publishing a partial raster is never allowed.
+        return image, TextInspection(
+            alpha_bounds=None,
+            safe_bounds=safe_bounds,
+            within_safe_area=False,
+            missing_glyph_count=_missing_glyph_count(font, text),
+            line_count=len(lines),
+            overflow=True,
+        )
     line_height = round(font_size * 1.35)
     block_height = line_height * len(lines)
     if placement == "center":
@@ -96,13 +109,22 @@ def _compose_text_image(
     else:
         center_y = height - margin_y - padding_y - block_height // 2 - 1
         fill = (255, 255, 255, 255)
-        background = (0, 0, 0, 185)
+        background = (0, 0, 0, 0 if style == "minimal" else 185)
     top = center_y - block_height // 2
     measurements = [draw.textbbox((0, 0), line, font=font) for line in lines]
     max_text_width = max((box[2] - box[0] for box in measurements), default=0)
     left = max(margin_x, (width - max_text_width) // 2 - padding_x)
     right = min(width - margin_x, (width + max_text_width) // 2 + padding_x)
     rectangle = (left, top - padding_y, right, top + block_height + padding_y)
+    if rectangle[1] < 0 or rectangle[3] > height:
+        return image, TextInspection(
+            alpha_bounds=None,
+            safe_bounds=safe_bounds,
+            within_safe_area=False,
+            missing_glyph_count=_missing_glyph_count(font, text),
+            line_count=len(lines),
+            overflow=True,
+        )
     draw.rounded_rectangle(
         rectangle,
         radius=max(8, font_size // 4),
@@ -132,6 +154,8 @@ def _compose_text_image(
         safe_bounds=safe_bounds,
         within_safe_area=within_safe_area,
         missing_glyph_count=_missing_glyph_count(font, text),
+        line_count=len(lines),
+        overflow=False,
     )
 
 
@@ -143,6 +167,7 @@ def inspect_text_layout(
     height: int,
     placement: Literal["center", "subtitle"],
     safe_area_percent: int,
+    style: Literal["standard", "minimal"] = "standard",
 ) -> TextInspection:
     try:
         _, inspection = _compose_text_image(
@@ -152,6 +177,7 @@ def inspect_text_layout(
             height=height,
             placement=placement,
             safe_area_percent=safe_area_percent,
+            style=style,
         )
         return inspection
     except (OSError, ValueError) as exc:
@@ -171,16 +197,24 @@ def render_text_png(
     height: int,
     placement: Literal["center", "subtitle"],
     safe_area_percent: int = 5,
+    style: Literal["standard", "minimal"] = "standard",
 ) -> None:
     try:
-        image, _ = _compose_text_image(
+        image, inspection = _compose_text_image(
             text=text,
             font_path=font_path,
             width=width,
             height=height,
             placement=placement,
             safe_area_percent=safe_area_percent,
+            style=style,
         )
+        if inspection.overflow:
+            raise PreflightError(
+                "text_layout_overflow",
+                "Text must be split into readable cues before rendering.",
+                details={"lineCount": inspection.line_count, "maxLines": 4},
+            )
         output_path.parent.mkdir(parents=True, exist_ok=True)
         temporary = output_path.with_name(f".{output_path.name}.{os.getpid()}.tmp.png")
         image.save(temporary, format="PNG", optimize=False)

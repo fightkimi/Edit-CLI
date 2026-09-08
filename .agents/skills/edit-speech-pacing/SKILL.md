@@ -45,3 +45,12 @@ Adapted from Video Timeline Copilot (MIT): whole-word/phrase cuts, complete take
 and visual/text continuity. Its helper commands, floating-second EDL, source-folder writes and
 Resolve workflow are replaced by the local CLI, integer-microsecond cut-list and preview gates.
 See [source record](SOURCE.json) and [upstream license](LICENSE.upstream).
+
+## Available CLI operations
+
+Use cutlist speech-check for read-only word-boundary diagnostics; unverifiedItemIds and
+listeningVerified=false prevent overclaiming. Outward suggestions are word times, not tested phoneme
+boundaries. Use cutlist set-range --item ID --in-us INTEGER --out-us INTEGER for an authorized range
+change; it writes a new validated revision and synchronizes child timing. Partial subtitle cuts fail
+rather than retaining the wrong words. Split/revise those cues first. Use render --item ID
+--context-items 1 --profile preview to hear/inspect the join with neighbors when playback is available.

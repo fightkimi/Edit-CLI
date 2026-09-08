@@ -24,8 +24,9 @@ split it at an appropriate spoken boundary or shorten nonessential title text be
 unsupported styling. Captions must fit within the item and the configured safe area.
 
 The current contract supports subtitle text, timing and local font paths, plus safe-area policy.
-It does not expose karaoke highlighting, arbitrary positions, caption background styles or animation.
-Do not invent `style`, `position` or `font_size` fields or run imported caption scripts behind the CLI.
+It supports standard/minimal subtitle presets through subtitle_policy.style. It does not expose
+karaoke highlighting, arbitrary positions, custom background styling or animation.
+Do not invent per-cue `style`, `position` or `font_size` fields or run imported caption scripts behind the CLI.
 
 ## Dialogue is the anchor
 
@@ -49,3 +50,10 @@ Adapted from 6missedcalls/video-editing-skill (MIT): operation order and caption
 Its shell scripts and Whisper auto-transcription are not installed. This version uses the local
 CLI and Chinese readability review; dynamic caption styles are explicitly capability gaps.
 See [source record](SOURCE.json) and [upstream license](LICENSE.upstream).
+
+## Available CLI operation
+
+Use cutlist captions to produce a new validated revision. --max-chars is a soft target, not a
+reading-speed guarantee. Preserve and report subtitle_timing_estimated and subtitle_readability_review
+warnings. --style standard|minimal changes the whole document and cannot be combined with --item.
+A text_layout_overflow finding requires splitting/revising text before render, never dropping it.
