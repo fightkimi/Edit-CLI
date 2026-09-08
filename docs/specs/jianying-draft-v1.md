@@ -1,96 +1,138 @@
-# Jianying editable draft export v1
+# Jianying editable draft contract
 
-Status: experimental protocol output. Mac and Windows entry generation is tested structurally;
-native application import/edit/render is **not verified** because the client is not installed.
+Status: experimental native protocol. Export and installation target both macOS and Windows.
+No Jianying app/version is certified by this project yet. This document supersedes the initial
+v1 manifest contract; newly generated packages use manifest schema **2**.
 
 ## User workflow
 
 ```text
 interview-edit --dry-run export jianying --project PROJECT --cutlist CUTLIST --name NAME
 interview-edit export jianying --project PROJECT --cutlist CUTLIST --name NAME \
-  [--platform macos|windows|both] [--bundle-media|--reference-media] [--json]
-interview-edit jianying doctor [--json]
+  [--platform macos|windows|both] [--bundle-media|--reference-media] [--resume] [--json]
+interview-edit jianying verify --draft PACKAGE [--json]
+interview-edit jianying doctor [--draft-root DIRECTORY] [--json]
 interview-edit jianying install --draft PACKAGE \
   [--draft-root EXISTING_DIRECTORY] [--platform macos|windows] [--json]
+interview-edit jianying open [--json]
+interview-edit jianying check-output --draft ORIGINAL_PACKAGE --video COMPLETED_VIDEO \
+  [--expected-duration-us MICROSECONDS] [--json]
 ```
 
-Global `--dry-run` applies to export and installation. `both` and `--bundle-media` are export
-defaults. Bundling copies complete referenced original files and fonts once per path; large projects
-should inspect the dry-run byte estimate first. Reference mode uses absolute local paths and cannot
-be installed through the portable installer. Neither command downloads software or uploads data.
+Use `both` and bundled media unless a receiving computer requires another choice. Dry-run writes
+nothing and estimates complete input file sizes, including fonts. Reference mode uses absolute local
+paths and cannot use the portable installer. Commands never download software or upload footage.
 
-## Editable output
+After installation, `open` requests an OS launch of the detected client. Select the new draft in
+Jianying, check and edit it, save/reopen, and use Jianying's Export action. This command does **not**
+select a draft, observe its editor or automate rendering. A process launch is not native acceptance.
+If the draft does not appear, retain it and record the app version; do not keep copying duplicates.
 
-The package is a directory under `artifact_root/exports/<name>-<UUID>/` containing:
+## Editable package
 
-- `draft_info.json` for Mac, `draft_content.json` for Windows, or both;
-- `draft_meta_info.json`, including all video/audio/photo material registrations;
-- `Resources/` with bundled original media, images and fonts when bundling is selected;
-- `export-manifest.json` with input SHA-256, resource file inventory and item-to-native-segment mapping;
-- a Chinese handoff guide.
+Outputs live under `artifact_root/exports/<name>-<UUID>/`:
 
-Primary video, camera-selected ranges, B-roll/still overlays, primary audio, subtitles and titles
-remain native clips/text on separate tracks. Video tracks are muted while primary audio stays on its
-own track. Source/target times are integer microseconds and camera offsets/drift use the same shared
-mapping as the FFmpeg renderer. Native speed materials preserve source/target duration differences.
-Rich text ranges use UTF-16 code units. Text is not converted to PNG or burned into an MP4.
+- Mac `draft_info.json`, Windows `draft_content.json`, or both;
+- `draft_meta_info.json` with video/audio/photo registration;
+- `Resources/` with complete media, images and fonts when bundling;
+- `input-cutlist.yaml`, the exact input bytes used for serialization;
+- typed `export-manifest.json` and a Chinese handoff guide.
 
-Paired fades become editable native alpha/volume keyframes. Native font sizing, text backgrounds,
-composited fades and audio playback must be reviewed in the application; they are not claimed to
-match the FFmpeg output pixel-for-pixel or sample-for-sample. CLI master loudness processing is not
-applied to the native project. Unsupported/invalid cut-list constructs fail rather than disappearing.
+Video/camera cuts, B-roll/stills, primary audio, subtitles and titles remain separate native segments.
+Visual tracks are muted; primary audio stays on its own track. Persistent time uses integer
+microseconds. Camera mapping reuses the FFmpeg renderer's source/sync calculations. Source/target
+length differences have matching native speed materials. Text style ranges use UTF-16 units.
+Fades become alpha/volume keyframes. Native typography, composed fades and sound require in-app
+review; CLI master loudness processing is not applied to this draft.
 
-## Integrity and privacy
+## Input and semantic verification
 
-Export validates the complete cut-list using original-media preflight before writing. It hashes
-used inputs, verifies copies, checks inputs again before atomic publication, and never changes the
-source cut-list or media. Dry-run produces no files. Names must be portable between Mac and Windows.
-The UUID prevents accidental collisions; outputs are never intentionally replaced.
+The exporter parses and hashes the same cut-list byte snapshot, rejects a stale passed document,
+captures index/sync hashes and binds media to indexed size/mtime/fingerprint evidence. Image/font
+revisions are captured before their use. Copies must match captured SHA-256; inputs are checked again
+before atomic publication. Source media and cut-lists remain unchanged.
 
-Bundled paths use the native draft-folder placeholder before installation. Installation verifies
-file sizes and SHA-256, rejects altered packages, symlink/path escapes and existing target drafts,
-copies into staging, selects the host entry file, and rebases media/font paths to the new local
-draft location. It preserves the original export package and the app's global `root_meta_info.json`.
-If the app's list does not refresh, restart it; listing/import behavior still needs client validation.
+Manifest schema 2 adds the input snapshot, configuration/control hashes, indexed source identities,
+source durations and resource digests, and native-material-to-source mappings. Old schema 1 packages
+fail with `jianying_reexport_required`; re-export from the original cut-list. This never migrates or
+rewrites a project that the user has edited in Jianying.
 
-The explicit installation destination is the user-authorized exception to artifact-root writes,
-limited to a newly created draft under an existing library. It does not modify or decrypt an existing
-Jianying project. Exported metadata includes original resource paths for provenance; do not assume
-that an export package is anonymous. No machine IDs are collected or copied from old user projects.
+An independent validator checks file inventories, portable paths, unique IDs, resolved references,
+material/track types, integer positive time ranges, bounds/nonoverlap, speed relationships, supported
+keyframes, complete UTF-16 style coverage, media registration and source provenance. It compares
+native text/timing and canvas with the input snapshot, checks each segment belongs to its input item,
+and checks both platform timelines/materials are identical except platform metadata. Rehashed but
+semantically invalid packages are rejected before installation. This detects internal consistency;
+it is not a cryptographic signature or proof that Jianying accepts a third-party format.
 
-## JSON and failure behavior
+Bundled resources use the native draft-folder placeholder. Installation verifies the package,
+rejects symlink/path escapes and existing targets, stages a private copy, rebases media/font paths,
+verifies the installed copy and publishes a new directory. The original package and existing user
+drafts remain intact. The global `root_meta_info.json` is preserved: whether the app scans this folder
+or needs registration remains a native acceptance question, not an assumed universal behavior.
 
-`export jianying` returns `draftPath`, `exportId`, `platform`, `bundledMedia`, `resourceBytes`,
-`dryRun`, and `nativeValidation: not_run`. `resourceBytes` is the planned/actual bundled input size,
-not an estimate of the final native rendered video. Warnings explicitly identify unverified client
-compatibility and approximate native styling/audio treatment. The manifest is a typed local protocol;
-the native draft is a version-pinned third-party JSON format.
+The explicit native draft directory is the authorized exception to artifact-root writes, limited to
+a new draft in an existing library. No old project is decrypted or rewritten. Provenance includes
+original paths and the original cut-list; portable packages are not anonymous. Device IDs are empty.
 
-`jianying doctor` reads known installation locations and returns the host platform, app path/version
-when available, default draft root and existence. Missing client returns exit 4 with `jianying_missing`.
-Windows version inspection is not currently implemented; an unavailable version is null.
-On other operating systems native client detection fails explicitly; package export remains possible.
+## Large inputs and retry
 
-`jianying install` with no explicit root requires a detected client and its existing draft library.
-An explicit root allows offline/manual installation into an existing library. This does not launch
-the GUI or prove a draft was imported. The receipt retains `nativeValidation: not_run`.
+`--resume` retains complete verified resources in `artifact_root/exports/.media-cache/<SHA-256>`.
+Every cache hit is rehashed; corrupt entries are replaced from the checked source. Outputs are copied,
+never hard-linked to sources or cache. Interrupting a copy removes that temporary file and the
+export's staging directory; completed cache entries survive. A retry creates a fresh draft with new
+IDs and reuses valid complete resources. This is file-level reuse, not byte-level resume. It still
+reads inputs and verifies outputs, so there is no promised speed-up or fewer complete copies.
 
-General failure codes follow the CLI envelope: 2 for invalid arguments/names, 3 for invalid or stale
-evidence/packages, 4 for missing native prerequisites, 5 for paths/permissions. Failed operations
-clean only their own staging directories and preserve prior projects.
+Without resume, space preflight reserves bundled input bytes plus metadata allowance. Resume uses a
+conservative two-copy reservation plus allowance, even when cached files exist. Cache retention is
+opt-in and may consume substantial disk space. Progress reports hash/copy percentages on stderr,
+leaving the JSON stdout envelope intact. Global `--quiet` suppresses progress.
 
-## Ownership after handoff
+## Client detection and version evidence
 
-Once opened, native edits belong to Jianying and may change/encrypt its draft representation.
-Do not install or regenerate over that project. There is no reverse importer or automatic merge
-into the source cut-list. Render manually in Jianying after editing; existing CLI QC/freeze reports
-do not certify that later native output. Automated GUI rendering is not part of this adapter yet.
+Mac detection reads bundle identity/version in user/system Applications. Windows checks known
+JianyingPro executable locations, orders version directories numerically, and reads the selected
+executable's PE version through the Windows version API without executing it. Unknown versions stay
+null. `doctor --draft-root` and `INTERVIEW_EDIT_JIANYING_DRAFT_ROOT` support explicit custom locations;
+otherwise the known platform default is reported. Native app settings are not rewritten or inferred.
+
+`doctor` includes `appPath`, `appVersion`, `draftRoot`, `draftRootExists`, `draftRootSource`,
+`compatibility: unverified`, `automatedExport: false` and `nativeValidation: not_run`. Missing app
+returns exit 4. Linux can generate/check packages but native detection/launch fails explicitly.
+No version is labeled compatible solely because another project reported success.
+
+## Output check and ownership
+
+`check-output` is read-only. It requires the original unedited schema-2 package, checks the selected
+video's dimensions, duration within one input timeline frame, presence of expected audio, full
+FFmpeg decode, and an unchanged SHA-256 across verification. If manual trimming changed duration,
+pass the new explicit `--expected-duration-us`; it is never silently taken from the video itself.
+The typed JSON result records video hash, actual/expected duration, tolerance, dimensions/audio and
+`output_check: passed`. It does not establish that the video came from Jianying, nor certify picture,
+loudness, captions, editable tracks or save/reopen. `native_validation` remains `not_run`.
+
+Native edits belong to Jianying and may change/encrypt its files. Never run package verification as
+an acceptance gate on the subsequently edited live draft. Never re-export/install over that draft.
+There is no reverse importer or automatic merge into cut-list. Existing CLI QC/freeze reports do not
+certify manual native edits. Unattended native GUI export remains pending actual client/version work.
+
+## Failure and receipt semantics
+
+Export JSON adds `cachedResources` to `draftPath`, `exportId`, `platform`, `bundledMedia`,
+`resourceBytes`, `dryRun` and `nativeValidation: not_run`. Install means files were copied and checked.
+`verify` returns `packageValidation: passed`; `open` returns `launchRequested`; neither upgrades native
+validation. Dry-run also applies to open. `verify`, `doctor`, and `check-output` are read-only checks.
+
+Exit codes remain: 2 invalid arguments; 3 stale/invalid inputs, packages or output checks; 4 missing
+prerequisites; 5 filesystem/permissions; 1 processing failure; 130 interrupted. Failures do not publish
+partial drafts or overwrite an existing draft. Unknown/malformed native structures fail explicitly.
 
 ## Protocol sources
 
-Reviewed data templates originate from MIT-licensed `duoec/duo-video` at
-`ef4eb46c823910553f901649f2f13fd7575e748f`, retrieved through `zenstory-ai/video-recap-skills` at
-`ec369e7e38866f23e953903fb30de9638a900e57`. Runtime data and complete license are in
-`src/interview_edit/adapters/jianying_templates/`; `SOURCE.json` records file hashes and scrubbing.
-Example device IDs and times were removed before committing. Native field behavior was also checked
-against pyJianYingDraft and capcut-cli source; no upstream executable is used by this exporter.
+The eight reviewed JSON templates retain the recorded MIT licensing decision: `duoec/duo-video`
+`ef4eb46c823910553f901649f2f13fd7575e748f`, retrieved through `zenstory-ai/video-recap-skills`
+`ec369e7e38866f23e953903fb30de9638a900e57`. Source hashes and license remain alongside the templates.
+See [first-principles audit](../research/2026-09-08-jianying-first-principles-audit.md) for upstream
+version/automation limitations and [acceptance record](../tests/jianying-editable-handoff.md) for
+this project's actual evidence. No upstream executable or new dependency is used by this adapter.

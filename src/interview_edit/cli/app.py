@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 import typer
 
 from interview_edit import __version__
-from interview_edit.adapters.jianying_app import host_platform, inspect_jianying
+from interview_edit.adapters.jianying_app import host_platform, inspect_jianying, launch_jianying
 from interview_edit.cli.output import emit, emit_expected_error
 from interview_edit.config.loader import config_path_for, load_project_config
 from interview_edit.config.models import ProjectConfig
@@ -29,8 +29,9 @@ from interview_edit.cutlist.validation import validate_cutlist
 from interview_edit.doctor.service import run_doctor
 from interview_edit.errors import DependencyError, InterviewEditError, PathSafetyError, UsageError
 from interview_edit.exit_codes import ExitCode
-from interview_edit.export.jianying import export_jianying
+from interview_edit.export.jianying import export_jianying, verify_draft
 from interview_edit.export.jianying_install import install_draft
+from interview_edit.export.jianying_output import check_output
 from interview_edit.ingest.service import IngestRequest, ingest_media, read_media_index
 from interview_edit.models.cutlist import CutList
 from interview_edit.models.protocol import (
@@ -1585,6 +1586,13 @@ def jianying_export_command(
             help="Copy original media/fonts for a portable editable project.",
         ),
     ] = True,
+    resume: Annotated[
+        bool,
+        typer.Option(
+            "--resume",
+            help="Reuse complete cached media copies; requires extra disk space.",
+        ),
+    ] = False,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Create an experimental editable Jianying draft, never a flattened video."""
@@ -1600,6 +1608,8 @@ def jianying_export_command(
             target=target,
             bundle_media=bundle_media,
             dry_run=options.dry_run,
+            resume=resume,
+            progress=None if options.quiet else _emit_progress,
         )
     except InterviewEditError as error:
         _fail(error, command="export jianying", json_output=machine)
@@ -1620,6 +1630,7 @@ def jianying_export_command(
                 "platform": target,
                 "bundledMedia": bundle_media,
                 "resourceBytes": result.resource_bytes,
+                "cachedResources": result.cached_resources,
                 "dryRun": result.dry_run,
                 "nativeValidation": "not_run",
                 "exportId": result.manifest.export_id if result.manifest else None,
@@ -1650,11 +1661,12 @@ def jianying_export_command(
 @jianying_app.command("doctor")
 def jianying_doctor_command(
     ctx: typer.Context,
+    draft_root: Annotated[Path | None, typer.Option("--draft-root")] = None,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Check the local client and draft location without installation or network use."""
     try:
-        data = inspect_jianying()
+        data = inspect_jianying(draft_root=draft_root) if draft_root else inspect_jianying()
     except InterviewEditError as error:
         _fail(
             error, command="jianying doctor", json_output=json_output or _options(ctx).json_output
@@ -1677,6 +1689,113 @@ def jianying_doctor_command(
     )
     if not ok:
         raise typer.Exit(ExitCode.DEPENDENCY_MISSING)
+
+
+@jianying_app.command("open")
+def jianying_open_command(
+    ctx: typer.Context,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Launch the detected client; select the installed draft in its project list."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        data = launch_jianying(dry_run=options.dry_run)
+    except InterviewEditError as error:
+        _fail(error, command="jianying open", json_output=machine)
+        return
+    emit(
+        JsonEnvelope(
+            ok=True,
+            command="jianying open",
+            data=data,
+            warnings=[
+                WarningPayload(
+                    code="jianying_client_unverified",
+                    message="Select the new draft and verify editable tracks in the app.",
+                )
+            ],
+        ),
+        json_output=machine,
+        human_lines=[
+            "Would launch Jianying."
+            if options.dry_run
+            else "Launch requested. Select the new draft in Jianying."
+        ],
+    )
+
+
+@jianying_app.command("verify")
+def jianying_verify_command(
+    ctx: typer.Context,
+    draft: Annotated[Path, typer.Option("--draft")],
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Check an unedited export package's files, timeline and input snapshot."""
+    machine = json_output or _options(ctx).json_output
+    try:
+        manifest = verify_draft(draft)
+    except InterviewEditError as error:
+        _fail(error, command="jianying verify", json_output=machine)
+        return
+    emit(
+        JsonEnvelope(
+            ok=True,
+            command="jianying verify",
+            data={
+                "exportId": manifest.export_id,
+                "packageValidation": "passed",
+                "nativeValidation": "not_run",
+            },
+        ),
+        json_output=machine,
+        human_lines=["Draft package validation passed; native app acceptance is still required."],
+    )
+
+
+@jianying_app.command("check-output")
+def jianying_check_output_command(
+    ctx: typer.Context,
+    draft: Annotated[Path, typer.Option("--draft", help="Original unedited export package.")],
+    video: Annotated[
+        Path, typer.Option("--video", help="Completed video exported from the editor.")
+    ],
+    expected_duration_us: Annotated[
+        int | None, typer.Option("--expected-duration-us", min=1)
+    ] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Check decoding, dimensions, duration and audio; visual review is separate."""
+    machine = json_output or _options(ctx).json_output
+    try:
+        result = check_output(draft, video, expected_duration_us=expected_duration_us)
+    except InterviewEditError as error:
+        _fail(error, command="jianying check-output", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError("jianying_io_failed", "Could not read the output or draft package."),
+            command="jianying check-output",
+            json_output=machine,
+        )
+        return
+    emit(
+        JsonEnvelope(
+            ok=True,
+            command="jianying check-output",
+            data=result.model_dump(mode="json"),
+            warnings=[
+                WarningPayload(
+                    code="jianying_visual_review_required",
+                    message="App provenance, editability, picture and sound still need review.",
+                )
+            ],
+        ),
+        json_output=machine,
+        human_lines=[
+            "Output media checks passed. Review picture, subtitles and sound in the editor."
+        ],
+    )
 
 
 @jianying_app.command("install")

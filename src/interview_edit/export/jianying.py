@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import shutil
 import tempfile
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -12,20 +14,25 @@ from pathlib import Path, PurePosixPath
 
 from pydantic import ValidationError
 
-from interview_edit.adapters.filesystem import sha256_file
+from interview_edit.adapters.filesystem import quick_fingerprint, sha256_file
 from interview_edit.adapters.jianying import DRAFT_PATH, DraftBuilder, Target, template
+from interview_edit.adapters.verified_copy import copy_verified
 from interview_edit.config.models import ProjectConfig
+from interview_edit.cutlist.service import parse_cutlist
 from interview_edit.cutlist.validation import validate_cutlist
 from interview_edit.errors import PathSafetyError, PreflightError, UsageError
+from interview_edit.export.jianying_validation import validate_native
 from interview_edit.ingest.service import read_media_index
 from interview_edit.models.cutlist import CutList
-from interview_edit.models.jianying import DraftFile, JianyingManifest
+from interview_edit.models.jianying import DraftFile, DraftSource, JianyingManifest
+from interview_edit.models.media import MediaIndex
 from interview_edit.project.layout import (
     artifact_path,
     atomic_write_text,
     canonical,
     validate_artifact_path,
 )
+from interview_edit.proxy.service import validate_source_revision
 
 
 @dataclass(frozen=True)
@@ -34,6 +41,24 @@ class ExportResult:
     manifest: JianyingManifest | None
     dry_run: bool
     resource_bytes: int
+    cached_resources: int = 0
+
+
+def byte_progress(
+    label: str, callback: Callable[[str], None] | None
+) -> Callable[[int, int], None] | None:
+    if callback is None:
+        return None
+    last_percent = -5
+
+    def report(current: int, total: int) -> None:
+        nonlocal last_percent
+        percent = min(100, current * 100 // max(1, total))
+        if percent >= last_percent + 5 or (percent == 100 and last_percent != 100):
+            callback(f"{label}: {percent}% ({current}/{total} bytes)")
+            last_percent = percent
+
+    return report
 
 
 def validate_name(name: str) -> None:
@@ -67,8 +92,19 @@ def export_jianying(
     target: Target = "both",
     bundle_media: bool = True,
     dry_run: bool = False,
+    resume: bool = False,
+    progress: Callable[[str], None] | None = None,
 ) -> ExportResult:
+    config = config.model_copy(deep=True)
     validate_name(name)
+    snapshot = cutlist_path.read_bytes()
+    document_snapshot = parse_cutlist(snapshot, cutlist_path)
+    if document_snapshot != document:
+        raise PreflightError(
+            "jianying_cutlist_snapshot_mismatch", "Cut-list changed before export began."
+        )
+    document = document_snapshot
+    cutlist_hash = hashlib.sha256(snapshot).hexdigest()
     report = validate_cutlist(config, document, cutlist_path=cutlist_path, profile_name="master")
     if not report.ok:
         raise PreflightError(
@@ -76,39 +112,77 @@ def export_jianying(
             "Export requires a valid cut-list.",
             details={"issues": [i.model_dump(mode="json") for i in report.issues]},
         )
+    index_path = artifact_path(config.artifact_root, "index", "media-index.json")
+    index_snapshot = index_path.read_bytes()
     index = read_media_index(config, required=True, validate_sources=True)
     assert index is not None
+    if index != MediaIndex.model_validate_json(index_snapshot):
+        raise PreflightError(
+            "jianying_input_changed", "Media index changed while capturing export inputs."
+        )
+    control_paths = [artifact_path(config.artifact_root, "index", "media-index.json")]
+    for take in {a.take_id for a in index.assets if a.take_id}:
+        report_path = artifact_path(config.artifact_root, "sync", take, "sync.json")
+        if report_path.exists():
+            control_paths.append(report_path)
+    control_hashes = {str(p): sha256_file(p) for p in control_paths}
+    control_hashes[str(index_path)] = hashlib.sha256(index_snapshot).hexdigest()
     builder = DraftBuilder(config, document, cutlist_path, index, bundle_media)
     draft, records = builder.build()
     export_id = draft["id"]
     destination = artifact_path(config.artifact_root, "exports", f"{name}-{export_id}")
-    cutlist_hash = sha256_file(cutlist_path)
     resources = builder.resources
+    used_assets = [a for a in index.assets if canonical(Path(a.canonical_path)) in resources]
+    for asset in used_assets:
+        validate_source_revision(asset)
+    if any(quick_fingerprint(p) != revision for p, revision in builder.resource_revisions.items()):
+        raise PreflightError("jianying_input_changed", "A resource changed during serialization.")
+    if sha256_file(cutlist_path) != cutlist_hash:
+        raise PreflightError("jianying_input_changed", "Cut-list changed during serialization.")
     resource_bytes = sum(path.stat().st_size for path in resources)
     if dry_run:
         return ExportResult(destination, None, True, resource_bytes if bundle_media else 0)
-    if (
-        bundle_media
-        and shutil.disk_usage(config.artifact_root).free < resource_bytes + 16 * 1024 * 1024
-    ):
+    required_bytes = resource_bytes * (2 if resume else 1) + 16 * 1024 * 1024
+    if bundle_media and shutil.disk_usage(config.artifact_root).free < required_bytes:
         raise PreflightError(
             "jianying_disk_space",
             "Not enough free space to bundle source media.",
-            details={"requiredBytes": resource_bytes},
+            details={"requiredBytes": required_bytes},
         )
-    source_hashes = {str(path): sha256_file(path) for path in resources}
+    source_hashes = {}
+    for position, path in enumerate(resources, 1):
+        source_hashes[str(path)] = sha256_file(
+            path, progress=byte_progress(f"Checking input {position}/{len(resources)}", progress)
+        )
+    for asset in used_assets:
+        validate_source_revision(asset)
+    if any(quick_fingerprint(p) != revision for p, revision in builder.resource_revisions.items()):
+        raise PreflightError("jianying_input_changed", "A resource changed while hashing inputs.")
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".jianying-", dir=destination.parent))
+    cached_resources = 0
     try:
         if bundle_media:
-            for source, relative in resources.items():
+            for position, (source, relative) in enumerate(resources.items(), 1):
                 copy = validate_artifact_path(staging / relative, staging)
-                copy.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(source, copy)
-                if sha256_file(copy) != source_hashes[str(source)]:
-                    raise PreflightError(
-                        "jianying_source_changed", "A source changed during packaging."
-                    )
+                expected = source_hashes[str(source)]
+                selected = source
+                if resume:
+                    cache = artifact_path(config.artifact_root, "exports", ".media-cache", expected)
+                    if cache.is_file() and sha256_file(cache) == expected:
+                        cached_resources += 1
+                    else:
+                        copy_verified(
+                            source,
+                            cache,
+                            expected,
+                            byte_progress(
+                                f"Caching resource {position}/{len(resources)}", progress
+                            ),
+                        )
+                    selected = cache
+                callback = byte_progress(f"Copying resource {position}/{len(resources)}", progress)
+                copy_verified(selected, copy, expected, callback)
         now = datetime.now(UTC)
         stamp = int(now.timestamp() * 1_000_000)
         for platform, filename in [("macos", "draft_info.json"), ("windows", "draft_content.json")]:
@@ -159,6 +233,19 @@ def export_jianying(
             for p in sorted(staging.rglob("*"))
             if p.is_file()
         ]
+        snapshot_path = staging / "input-cutlist.yaml"
+        snapshot_path.write_bytes(snapshot)
+        files.append(
+            DraftFile(relative_path=snapshot_path.name, size=len(snapshot), sha256=cutlist_hash)
+        )
+        config_hash = hashlib.sha256(
+            json.dumps(
+                config.model_dump(mode="json"),
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest()
         manifest = JianyingManifest(
             export_id=export_id,
             project_id=config.project_id,
@@ -171,19 +258,40 @@ def export_jianying(
             source_map=builder.source_map,
             source_fingerprints=source_hashes,
             created_at=now.isoformat(),
+            input_snapshot="input-cutlist.yaml",
+            config_sha256=config_hash,
+            control_fingerprints=control_hashes,
+            source_assets={
+                a.asset_id: DraftSource(
+                    source_path=a.canonical_path,
+                    resource_path=resources[canonical(Path(a.canonical_path))],
+                    duration_us=a.duration_us,
+                    sha256=source_hashes[str(canonical(Path(a.canonical_path)))],
+                )
+                for a in used_assets
+            },
+            material_sources={
+                identifier: asset_id for (asset_id, _), identifier in builder.media_ids.items()
+            },
         )
         atomic_write_text(staging / "export-manifest.json", manifest.model_dump_json(indent=2))
-        if sha256_file(cutlist_path) != cutlist_hash or any(
-            sha256_file(Path(p)) != h for p, h in source_hashes.items()
+        if (
+            sha256_file(cutlist_path) != cutlist_hash
+            or any(sha256_file(Path(p)) != h for p, h in source_hashes.items())
+            or any(sha256_file(Path(p)) != h for p, h in control_hashes.items())
         ):
             raise PreflightError(
                 "jianying_input_changed", "Inputs changed before draft publication."
             )
+        for asset in used_assets:
+            validate_source_revision(asset)
         verify_draft(staging)
         if destination.exists():
             raise PathSafetyError("jianying_output_exists", "Draft output already exists.")
         os.rename(staging, destination)
-        return ExportResult(destination, manifest, False, resource_bytes if bundle_media else 0)
+        return ExportResult(
+            destination, manifest, False, resource_bytes if bundle_media else 0, cached_resources
+        )
     finally:
         if staging.exists():
             shutil.rmtree(staging)
@@ -203,6 +311,11 @@ def _verify_draft(path: Path, *, native_root: Path | None = None) -> JianyingMan
             "jianying_manifest_invalid", "Draft export manifest is missing or invalid."
         ) from exc
     expected = set()
+    if manifest.schema_version != "2":
+        raise PreflightError(
+            "jianying_reexport_required",
+            "Re-export this legacy experimental package with input snapshots.",
+        )
     for record in manifest.files:
         relative = PurePosixPath(record.relative_path)
         if (
@@ -235,12 +348,43 @@ def _verify_draft(path: Path, *, native_root: Path | None = None) -> JianyingMan
         if manifest.platform == "both"
         else ["draft_info.json" if manifest.platform == "macos" else "draft_content.json"]
     )
+    require_snapshot = manifest.input_snapshot
+    if require_snapshot not in expected:
+        raise PreflightError(
+            "jianying_snapshot_missing", "Input snapshot is not in the file inventory."
+        )
+    snapshot_path = validate_artifact_path(root / str(require_snapshot), root)
+    if sha256_file(snapshot_path) != manifest.cutlist_sha256:
+        raise PreflightError(
+            "jianying_snapshot_mismatch", "Input snapshot hash differs from the manifest."
+        )
+    source_document = parse_cutlist(snapshot_path.read_bytes(), snapshot_path)
+    if (
+        source_document.project_id != manifest.project_id
+        or sum(i.timeline_duration_us for a in source_document.acts for i in a.items)
+        != manifest.duration_us
+    ):
+        raise PreflightError(
+            "jianying_snapshot_mismatch", "Input snapshot identity/timing differs."
+        )
+    meta = json.loads((root / "draft_meta_info.json").read_text(encoding="utf-8"))
+    canonical_timeline = None
     for filename in filenames:
         if filename not in expected or "draft_meta_info.json" not in expected:
             raise PreflightError(
                 "jianying_package_incomplete", "Native draft entry or metadata is missing."
             )
         content = json.loads((root / filename).read_text(encoding="utf-8"))
+        validate_native(content, meta, manifest, source_document)
+        timeline = (
+            content["tracks"],
+            content["materials"],
+            content["canvas_config"],
+            content["fps"],
+        )
+        if canonical_timeline is not None and canonical_timeline != timeline:
+            raise PreflightError("jianying_platform_diverged", "Mac and Windows timelines differ.")
+        canonical_timeline = timeline
         if (
             content.get("id") != manifest.export_id
             or content.get("duration") != manifest.duration_us
@@ -281,7 +425,7 @@ def _verify_draft(path: Path, *, native_root: Path | None = None) -> JianyingMan
 def verify_draft(path: Path, *, native_root: Path | None = None) -> JianyingManifest:
     try:
         return _verify_draft(path, native_root=native_root)
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, OverflowError) as exc:
         raise PreflightError(
             "jianying_native_invalid", "Draft data is malformed or unreadable."
         ) from exc

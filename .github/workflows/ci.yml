@@ -57,3 +57,37 @@ jobs:
           name: interview-edit-dist-python-${{ matrix.python-version }}
           path: dist/
           if-no-files-found: error
+
+  native-platform-contracts:
+    name: Native adapter contracts (${{ matrix.os }})
+    env:
+      INTERVIEW_EDIT_CI: "1"
+      INTERVIEW_EDIT_TEST_FONT: ${{ matrix.os == 'windows-2022' && 'C:/Windows/Fonts/arial.ttf' || '/System/Library/Fonts/PingFang.ttc' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-2022]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.19"
+      - run: uv sync --locked --group dev
+      - name: Install Mac media tools
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+      - name: Install Windows media tools
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg --yes --no-progress
+      - name: Platform paths, version API, safe copy and launcher contracts
+        run: uv run pytest tests/unit/test_jianying_app.py tests/unit/test_verified_copy.py
+      - name: Export, installation and output contracts (no native GUI)
+        run: uv run pytest tests/integration/test_jianying_export.py tests/integration/test_jianying_integrity.py tests/integration/test_jianying_output.py
+      - name: CLI import and command registration
+        run: |
+          uv run interview-edit jianying --help
+          uv run interview-edit export jianying --help

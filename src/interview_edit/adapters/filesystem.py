@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from pathlib import Path
 
 _FINGERPRINT_SAMPLE_SIZE = 256 * 1024
@@ -29,11 +30,16 @@ def quick_fingerprint(path: Path) -> str:
     return f"quick-sha256-v1:{digest.hexdigest()}"
 
 
-def sha256_file(path: Path) -> str:
+def sha256_file(path: Path, *, progress: Callable[[int, int], None] | None = None) -> str:
     digest = hashlib.sha256()
+    total = path.stat().st_size
+    read = 0
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
+            read += len(chunk)
+            if progress is not None:
+                progress(read, total)
     return digest.hexdigest()
 
 

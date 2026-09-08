@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from PIL import Image
 
+from interview_edit.adapters.filesystem import quick_fingerprint
 from interview_edit.config.models import ProjectConfig
 from interview_edit.cutlist.timing import map_source_range, visual_intervals
 from interview_edit.errors import PreflightError
@@ -53,6 +54,7 @@ class DraftBuilder:
     materials: dict[str, Any] = field(default_factory=lambda: template("project")["materials"])
     tracks: dict[str, dict[str, Any]] = field(default_factory=dict)
     resources: dict[Path, str] = field(default_factory=dict)
+    resource_revisions: dict[Path, str] = field(default_factory=dict)
     media_ids: dict[tuple[str, str], str] = field(default_factory=dict)
     source_map: list[dict[str, Any]] = field(default_factory=list)
     active_item: TimelineItem | None = None
@@ -102,6 +104,7 @@ class DraftBuilder:
     def resource(self, path: Path) -> str:
         path = canonical(path)
         if path not in self.resources:
+            self.resource_revisions[path] = quick_fingerprint(path)
             suffix = path.suffix.lower()
             if len(suffix) > 12 or not suffix[1:].isalnum():
                 raise PreflightError(
@@ -145,6 +148,7 @@ class DraftBuilder:
 
     def still(self, value: str, duration: int) -> str:
         path = self.asset_path(value)
+        resource = self.resource(path)
         identifier = new_id()
         with Image.open(path) as image:
             width, height = image.size
@@ -155,7 +159,7 @@ class DraftBuilder:
             local_material_id=identifier,
             material_name=path.name,
             type="photo",
-            path=self.resource(path),
+            path=resource,
             duration=duration,
             width=width,
             height=height,

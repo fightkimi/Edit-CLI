@@ -67,7 +67,10 @@ For an editable handoff instead of only an MP4, use
 It creates experimental Mac/Windows native draft files with separate video, audio, B-roll and text
 tracks, bundled originals/fonts, and a checksum inventory. Run `jianying doctor` and
 `jianying install --draft PACKAGE` on the receiving computer, then open the new project in Jianying.
-Native import/edit/render compatibility has not yet been verified on an installed client.
+Use `jianying verify` to check the input-bound package, `jianying open` to launch the client, and
+`jianying check-output` to inspect a completed native video. Optional `--resume` retains verified
+complete resource copies for retry. Native import/edit/render compatibility remains unverified;
+launching the app and checking media are separate from native acceptance.
 See [editable Jianying handoff](docs/specs/jianying-draft-v1.md).
 
 ```bash
