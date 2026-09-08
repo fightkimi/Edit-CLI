@@ -62,6 +62,17 @@ reviewing a join. See the [quality command contract](docs/specs/cli-contract-v1.
 
 ## Implemented commands
 
+For an editable handoff instead of only an MP4, use
+`interview-edit export jianying --project PROJECT --cutlist CUTLIST --name NAME`.
+It creates experimental Mac/Windows native draft files with separate video, audio, B-roll and text
+tracks, bundled originals/fonts, and a checksum inventory. Run `jianying doctor` and
+`jianying install --draft PACKAGE` on the receiving computer, then open the new project in Jianying.
+Use `jianying verify` to check the input-bound package, `jianying open` to launch the client, and
+`jianying check-output` to inspect a completed native video. Optional `--resume` retains verified
+complete resource copies for retry. Native import/edit/render compatibility remains unverified;
+launching the app and checking media are separate from native acceptance.
+See [editable Jianying handoff](docs/specs/jianying-draft-v1.md).
+
 ```bash
 interview-edit --help
 interview-edit init --project /path/to/project --name "My video" \

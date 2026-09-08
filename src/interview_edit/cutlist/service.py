@@ -45,8 +45,20 @@ def resolve_cutlist_path(project_root: Path, path: Path) -> Path:
 def load_cutlist(path: Path) -> CutList:
     resolved = canonical(path)
     try:
-        loaded: object = yaml.safe_load(resolved.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, yaml.YAMLError) as exc:
+        content = resolved.read_bytes()
+    except OSError as exc:
+        raise PreflightError(
+            "cutlist_read_failed", "Could not read cut-list.", details={"path": str(resolved)}
+        ) from exc
+    return parse_cutlist(content, resolved)
+
+
+def parse_cutlist(content: bytes, path: Path) -> CutList:
+    """Parse exactly the bytes whose hash identifies an editing decision snapshot."""
+    resolved = canonical(path)
+    try:
+        loaded: object = yaml.safe_load(content.decode("utf-8"))
+    except (UnicodeError, yaml.YAMLError) as exc:
         raise PreflightError(
             "cutlist_read_failed",
             f"Could not read cut-list: {resolved}",

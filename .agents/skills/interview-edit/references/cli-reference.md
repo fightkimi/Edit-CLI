@@ -105,3 +105,17 @@ listening quality, audio-safe phonemes, or separate-audio alignment. Report unve
 
 After validation, use render --item ID --context-items 1 --profile preview to include neighboring
 items when reviewing a join. Run preview QC and inspect the result. Master/freeze gates still apply.
+
+## Editable Jianying handoff
+
+```text
+interview-edit export jianying --project PATH --cutlist PATH --name NAME \
+  [--platform macos|windows|both] [--bundle-media|--reference-media] --json
+interview-edit jianying doctor --json
+interview-edit jianying install --draft PACKAGE [--draft-root EXISTING_DIRECTORY] \
+  [--platform macos|windows] --json
+```
+
+Use this route when the user needs a native editable timeline. Default export bundles original media
+and fonts and writes both platform entry files; show the --dry-run size for large source sets.
+Follow jianying-handoff.md. Neither file creation nor installation proves the client accepted it.
