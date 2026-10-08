@@ -182,3 +182,11 @@ It must be split or revised before rendering; a partial raster must never replac
 
 Warnings do not block rendering. Any error returns exit code 3 before FFmpeg starts and does not
 create or replace a render output.
+
+## Audio edge smoothing (additive schema-1 policy)
+
+Optional `audio_policy: {edge_fade_us: 5000}` enables bounded audio-only edge smoothing.
+The default is 0; accepted values are strict integer microseconds from 0 to 50000. Contiguous ranges
+of the same synchronized audio source are not faded at their join. Short items cap each edge at one
+quarter of item duration; longer declared transitions remain effective. The renderer and Jianying
+serializer share the boundary plan. See [editorial review](editorial-review-v1.md).

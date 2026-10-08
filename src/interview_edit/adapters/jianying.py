@@ -15,6 +15,7 @@ from PIL import Image
 
 from interview_edit.adapters.filesystem import quick_fingerprint
 from interview_edit.config.models import ProjectConfig
+from interview_edit.cutlist.audio import edge_fades
 from interview_edit.cutlist.timing import map_source_range, visual_intervals
 from interview_edit.errors import PreflightError
 from interview_edit.models.cutlist import CutList, TimelineItem
@@ -55,6 +56,7 @@ class DraftBuilder:
     tracks: dict[str, dict[str, Any]] = field(default_factory=dict)
     resources: dict[Path, str] = field(default_factory=dict)
     resource_revisions: dict[Path, str] = field(default_factory=dict)
+    audio_edges: dict[str, tuple[int, int]] = field(default_factory=dict)
     media_ids: dict[tuple[str, str], str] = field(default_factory=dict)
     source_map: list[dict[str, Any]] = field(default_factory=list)
     active_item: TimelineItem | None = None
@@ -62,11 +64,16 @@ class DraftBuilder:
 
     def fade_keyframes(self, start: int, duration: int, *, audio: bool) -> list[dict[str, Any]]:
         item = self.active_item
-        if item is None or not (item.transition_in or item.transition_out):
+        if item is None:
             return []
         local_start = start - self.item_start_us
         fade_in = item.transition_in.duration_us if item.transition_in else 0
         fade_out = item.transition_out.duration_us if item.transition_out else 0
+        if audio:
+            edges = self.audio_edges.get(item.item_id, (0, 0))
+            fade_in, fade_out = max(fade_in, edges[0]), max(fade_out, edges[1])
+        if not (fade_in or fade_out):
+            return []
         positions = {0, duration}
         for edge in (fade_in, item.timeline_duration_us - fade_out):
             if local_start < edge < local_start + duration:
@@ -287,6 +294,9 @@ class DraftBuilder:
 
     def build(self) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         assets = {a.asset_id: a for a in self.index.assets}
+        items = [item for act in self.document.acts for item in act.items]
+        fades = edge_fades(self.config, self.index, items, self.document.audio_policy.edge_fade_us)
+        self.audio_edges = {item.item_id: fade for item, fade in zip(items, fades, strict=True)}
         cursor = 0
         for act in self.document.acts:
             for item in act.items:

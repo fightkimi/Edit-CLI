@@ -28,6 +28,7 @@ from interview_edit.adapters.render import (
 )
 from interview_edit.adapters.text import render_text_png
 from interview_edit.config.models import ProjectConfig, RenderProfile
+from interview_edit.cutlist.audio import edge_fades
 from interview_edit.cutlist.timing import map_source_range, visual_intervals
 from interview_edit.cutlist.validation import validate_cutlist
 from interview_edit.errors import InterviewEditError, PathSafetyError, PreflightError, UsageError
@@ -430,15 +431,16 @@ def _build_item(
     cache_key: str,
     runner: ProcessRunner,
     command_log: _CommandLog,
+    audio_edges: tuple[int, int] = (0, 0),
 ) -> RenderItemManifest:
     assets = {asset.asset_id: asset for asset in index.assets}
     source = assets.get(item.source_id or "")
     cache_root = artifact_path(request.config.artifact_root, "renders", "cache", "items")
-    output = cache_root / f"{cache_key}.mp4"
+    output = cache_root / f"{cache_key}.mov"
     manifest_path = cache_root / f"{cache_key}.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
-        prefix=f".{item.item_id}.", suffix=".mp4", dir=cache_root, delete=False
+        prefix=f".{item.item_id}.", suffix=".mov", dir=cache_root, delete=False
     ) as handle:
         temporary = Path(handle.name)
     local_commands_start = len(command_log.commands)
@@ -648,13 +650,15 @@ def _build_item(
             filters.append(f"[{audio_input}:a:0]asetpts=PTS-STARTPTS[abase]")
 
         audio_filters: list[str] = []
-        if item.transition_in is not None:
-            audio_filters.append(f"afade=t=in:st=0:d={seconds(item.transition_in.duration_us)}")
-        if item.transition_out is not None:
-            start = item.timeline_duration_us - item.transition_out.duration_us
-            audio_filters.append(
-                f"afade=t=out:st={seconds(start)}:d={seconds(item.transition_out.duration_us)}"
-            )
+        fade_in = max(audio_edges[0], item.transition_in.duration_us if item.transition_in else 0)
+        fade_out = max(
+            audio_edges[1], item.transition_out.duration_us if item.transition_out else 0
+        )
+        if fade_in:
+            audio_filters.append(f"afade=t=in:st=0:d={seconds(fade_in)}")
+        if fade_out:
+            start = item.timeline_duration_us - fade_out
+            audio_filters.append(f"afade=t=out:st={seconds(start)}:d={seconds(fade_out)}")
         if audio_filters:
             filters.append(f"[abase]{','.join(audio_filters)}[afinal]")
         else:
@@ -674,7 +678,7 @@ def _build_item(
                 "-pix_fmt",
                 "yuv420p",
                 "-c:a",
-                profile.audio_codec,
+                "pcm_s16le",
                 "-ar",
                 str(profile.audio_sample_rate),
                 "-ac",
@@ -873,7 +877,13 @@ def render_cutlist(
     assembled: Path | None = None
     try:
         item_outputs: list[Path] = []
-        for selected_item in selected:
+        fades = edge_fades(
+            request.config,
+            index,
+            [entry.item for entry in selected],
+            request.cutlist.audio_policy.edge_fade_us,
+        )
+        for selected_item, audio_edges in zip(selected, fades, strict=True):
             item = selected_item.item
             if progress is not None:
                 progress(f"Preparing item {item.item_id}")
@@ -888,9 +898,10 @@ def render_cutlist(
             )
             cache_key = _canonical_hash(
                 {
-                    "schema": "render-item-v2",
+                    "schema": "render-item-v3-pcm-audio",
                     "item": item.model_dump(mode="json"),
                     "subtitlePolicy": request.cutlist.subtitle_policy.model_dump(mode="json"),
+                    "audioEdges": audio_edges,
                     "profile": profile.model_dump(mode="json"),
                     "encoder": encoder,
                     "inputs": item_fingerprints,
@@ -911,6 +922,7 @@ def render_cutlist(
                     cache_key=cache_key,
                     runner=active_runner,
                     command_log=command_log,
+                    audio_edges=audio_edges,
                 )
                 state: Literal["built", "cached"] = "built"
             else:
@@ -939,7 +951,7 @@ def render_cutlist(
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
             prefix=f".{output_path.stem}.",
-            suffix=".assembled.mp4",
+            suffix=".assembled.mov",
             dir=output_path.parent,
             delete=False,
         ) as handle:
@@ -1038,8 +1050,35 @@ def render_cutlist(
                 purpose="normalize master loudness",
             )
         else:
-            os.replace(assembled, candidate)
-            assembled = None
+            # Encode audio once after concat; independent AAC priming/padding would insert gaps.
+            command_log.run(
+                [
+                    "-nostdin",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-i",
+                    str(assembled),
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "0:a:0",
+                    "-c:v",
+                    "copy",
+                    "-c:a",
+                    profile.audio_codec,
+                    "-ar",
+                    str(profile.audio_sample_rate),
+                    "-ac",
+                    str(profile.audio_channels),
+                    "-movflags",
+                    "+faststart",
+                    "-y",
+                    str(candidate),
+                ],
+                active_runner,
+                purpose="encode final preview audio",
+            )
 
         for key in input_fingerprints:
             if key.startswith("source:"):

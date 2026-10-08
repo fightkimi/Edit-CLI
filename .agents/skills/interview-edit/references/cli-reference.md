@@ -119,3 +119,20 @@ interview-edit jianying install --draft PACKAGE [--draft-root EXISTING_DIRECTORY
 Use this route when the user needs a native editable timeline. Default export bundles original media
 and fonts and writes both platform entry files; show the --dry-run size for large source sets.
 Follow jianying-handoff.md. Neither file creation nor installation proves the client accepted it.
+
+
+## Editorial evidence and pacing
+
+- `interview-edit review transcript --project PATH [--asset ID ...] --json` writes source-linked phrase JSON/Markdown
+  from verified corrected transcripts. Missing word/speaker/event evidence remains explicit.
+- `interview-edit review timeline --project PATH (--asset ID | --run RENDER_ID) --focus-us US --json` writes a
+  filmstrip, absolute PCM waveform, source-mapped word report and listenable WAV. Source and output
+  clocks differ; use the report mappings. Images/words/audio contain content: apply privacy.md
+  before loading them into the agent. The envelope never contains transcript text.
+- `interview-edit cutlist audio --project PATH --cutlist PATH --edge-fade-us 5000 --json` writes a validated revision
+  with bounded smoothing at discontinuous audio edges. Contiguous source audio/camera changes are
+  preserved. Render and native draft serialization share this policy.
+- Caption pacing: `cutlist captions ... --pause-us 300000 --min-duration-us 350000 --max-cps 20`.
+  Bounds/pauses can make the minimum impossible; report warnings and review, never force success.
+
+New review artifacts are evidence, not QC/native/listening acceptance. Dry-run creates no files.

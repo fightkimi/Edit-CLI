@@ -327,3 +327,15 @@ Experimental editable-project export and native draft-library handoff are specif
 | 4 | missing external dependency |
 | 5 | permission or path-boundary failure |
 | 130 | interrupted by user |
+
+## Editorial review and pacing
+
+`review transcript` builds a content-bearing local phrase index across verified selected sources.
+`review timeline` builds filmstrip/absolute-waveform/word evidence for one indexed source or successful
+render run at `--focus-us`. JSON output contains paths/counts/warnings, not transcript text. Both use
+new directories under `artifact_root/review`; dry-run writes nothing. Invalid/stale evidence fails
+with the existing envelope and exit codes. Audio decode failure is not reported as silence.
+
+`cutlist audio --edge-fade-us 5000` writes a new validated audio-policy revision.
+`cutlist captions` adds opt-in `--pause-us`, `--min-duration-us` and configurable `--max-cps`.
+The complete additive command and artifact contract is [editorial-review-v1.md](editorial-review-v1.md).

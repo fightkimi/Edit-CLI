@@ -87,7 +87,10 @@ jobs:
         run: uv run pytest tests/unit/test_jianying_app.py tests/unit/test_verified_copy.py
       - name: Export, installation and output contracts (no native GUI)
         run: uv run pytest tests/integration/test_jianying_export.py tests/integration/test_jianying_integrity.py tests/integration/test_jianying_output.py
+      - name: Editorial evidence and audio/caption pacing
+        run: uv run pytest tests/unit/test_audio_edges.py tests/unit/test_caption_pacing.py tests/unit/test_review_phrases.py tests/integration/test_editorial_review.py
       - name: CLI import and command registration
         run: |
           uv run interview-edit jianying --help
           uv run interview-edit export jianying --help
+          uv run interview-edit review --help

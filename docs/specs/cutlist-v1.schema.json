@@ -36,6 +36,20 @@
       "title": "Act",
       "type": "object"
     },
+    "AudioPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "edge_fade_us": {
+          "default": 0,
+          "maximum": 50000,
+          "minimum": 0,
+          "title": "Edge Fade Us",
+          "type": "integer"
+        }
+      },
+      "title": "AudioPolicy",
+      "type": "object"
+    },
     "CameraCut": {
       "additionalProperties": false,
       "properties": {
@@ -550,6 +564,9 @@
     },
     "subtitle_policy": {
       "$ref": "#/$defs/SubtitlePolicy"
+    },
+    "audio_policy": {
+      "$ref": "#/$defs/AudioPolicy"
     },
     "render_profile": {
       "default": "preview",

@@ -15,6 +15,7 @@ from interview_edit.config.models import ProjectConfig
 from interview_edit.cutlist.editing import (
     RevisionResult,
     check_speech,
+    set_audio_policy,
     set_source_range,
     split_captions,
 )
@@ -45,6 +46,7 @@ from interview_edit.project.service import InitRequest, initialize_project
 from interview_edit.proxy.service import ProxyRequest, build_proxies
 from interview_edit.qc.service import QCRequest, run_qc
 from interview_edit.render.service import RenderRequest, render_cutlist
+from interview_edit.review.service import ReviewResult, phrase_view, timeline_review
 from interview_edit.status.service import read_project_status
 from interview_edit.sync.service import SyncRequest, parse_manual_offset, sync_take
 from interview_edit.transcribe.service import TranscribeRequest, transcribe_assets
@@ -98,6 +100,10 @@ jianying_app = typer.Typer(
     help="Inspect and install local Jianying draft packages.", no_args_is_help=True
 )
 app.add_typer(jianying_app, name="jianying")
+review_app = typer.Typer(
+    help="Build source phrase and timeline evidence views.", no_args_is_help=True
+)
+app.add_typer(review_app, name="review")
 
 
 def _show_version(value: bool) -> None:
@@ -1094,6 +1100,9 @@ def cutlist_captions_command(
     cutlist: Annotated[Path | None, typer.Option("--cutlist")] = None,
     item: Annotated[str | None, typer.Option("--item")] = None,
     max_chars: Annotated[int, typer.Option("--max-chars", min=2, max=80)] = 18,
+    min_duration_us: Annotated[int, typer.Option("--min-duration-us", min=0, max=5_000_000)] = 0,
+    pause_us: Annotated[int, typer.Option("--pause-us", min=0, max=5_000_000)] = 0,
+    max_cps: Annotated[int, typer.Option("--max-cps", min=1, max=80)] = 20,
     style: Annotated[
         Literal["standard", "minimal"] | None,
         typer.Option("--style", help="Whole cut-list subtitle preset."),
@@ -1115,6 +1124,9 @@ def cutlist_captions_command(
             path,
             item_id=item,
             max_chars=max_chars,
+            min_duration_us=min_duration_us,
+            pause_us=pause_us,
+            max_chars_per_second=max_cps,
             style=style,
             output=output,
             dry_run=options.dry_run,
@@ -1123,6 +1135,137 @@ def cutlist_captions_command(
         _fail(error, command="cutlist captions", json_output=machine)
         return
     _emit_revision(result, "cutlist captions", root, machine)
+
+
+@cutlist_app.command("audio")
+def cutlist_audio_command(
+    ctx: typer.Context,
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    cutlist: Annotated[Path | None, typer.Option("--cutlist")] = None,
+    edge_fade_us: Annotated[int, typer.Option("--edge-fade-us", min=0, max=50_000)] = 5_000,
+    output: Annotated[Path | None, typer.Option("--output")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Write a revision with bounded audio smoothing at discontinuous source joins."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config, path, document, root = _editing_context(options, project, cutlist)
+        result = set_audio_policy(
+            config,
+            document,
+            path,
+            edge_fade_us=edge_fade_us,
+            output=output,
+            dry_run=options.dry_run,
+        )
+    except InterviewEditError as error:
+        _fail(error, command="cutlist audio", json_output=machine)
+        return
+    _emit_revision(result, "cutlist audio", root, machine)
+
+
+def _emit_review(result: ReviewResult, command: str, machine: bool) -> None:
+    emit(
+        JsonEnvelope(
+            ok=True,
+            command=command,
+            data={
+                "reviewPath": str(result.path),
+                "entryCount": result.count,
+                "dryRun": result.dry_run,
+                "listeningVerified": False,
+            },
+            artifacts=[]
+            if result.dry_run
+            else [ArtifactReference(kind="editorial-review", path=str(result.path))],
+            warnings=[
+                WarningPayload(
+                    code="review_contains_content",
+                    message="Review files contain text/images/audio; observe project privacy mode.",
+                ),
+                *[
+                    WarningPayload(
+                        code=code,
+                        message="Review report includes evidence limits; inspect its warnings.",
+                    )
+                    for code in result.warnings
+                ],
+            ],
+        ),
+        json_output=machine,
+        human_lines=[f"{'Would create' if result.dry_run else 'Created'} review: {result.path}"],
+    )
+
+
+@review_app.command("transcript")
+def review_transcript_command(
+    ctx: typer.Context,
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    asset: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--asset", help="Repeat for selected assets; defaults to transcribed sources."
+        ),
+    ] = None,
+    pause_us: Annotated[int, typer.Option("--pause-us", min=1, max=5_000_000)] = 500_000,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Create a source-linked phrase reading view without exposing text in CLI output."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config = load_project_config(_selected_project(project, options.project))
+        result = phrase_view(config, asset_ids=asset, pause_us=pause_us, dry_run=options.dry_run)
+    except InterviewEditError as error:
+        _fail(error, command="review transcript", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError("review_io_failed", "Could not read or write review evidence."),
+            command="review transcript",
+            json_output=machine,
+        )
+        return
+    _emit_review(result, "review transcript", machine)
+
+
+@review_app.command("timeline")
+def review_timeline_command(
+    ctx: typer.Context,
+    focus_us: Annotated[int, typer.Option("--focus-us", min=0)],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    asset: Annotated[str | None, typer.Option("--asset")] = None,
+    run: Annotated[str | None, typer.Option("--run")] = None,
+    window_us: Annotated[int, typer.Option("--window-us", min=1, max=5_000_000)] = 1_500_000,
+    frames: Annotated[int, typer.Option("--frames", min=2, max=16)] = 8,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Review source or rendered cut windows with filmstrip, PCM waveform and word timing."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config = load_project_config(_selected_project(project, options.project))
+        result = timeline_review(
+            config,
+            asset_id=asset,
+            run_id=run,
+            focus_us=focus_us,
+            window_us=window_us,
+            frame_count=frames,
+            dry_run=options.dry_run,
+        )
+    except InterviewEditError as error:
+        _fail(error, command="review timeline", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError("review_io_failed", "Could not read or write review evidence."),
+            command="review timeline",
+            json_output=machine,
+        )
+        return
+    _emit_review(result, "review timeline", machine)
 
 
 @cutlist_app.command("speech-check")

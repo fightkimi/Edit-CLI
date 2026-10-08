@@ -136,3 +136,7 @@ The eight reviewed JSON templates retain the recorded MIT licensing decision: `d
 See [first-principles audit](../research/2026-09-08-jianying-first-principles-audit.md) for upstream
 version/automation limitations and [acceptance record](../tests/jianying-editable-handoff.md) for
 this project's actual evidence. No upstream executable or new dependency is used by this adapter.
+
+Audio edge smoothing from `cutlist.audio_policy` is now exported as native volume keyframes. The
+same audio-range continuity calculation is shared with FFmpeg rendering, so contiguous primary audio
+is preserved across visual edits. This adds structural coverage, not a new native compatibility claim.

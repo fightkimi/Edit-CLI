@@ -260,6 +260,9 @@ def split_captions(
     *,
     item_id: str | None = None,
     max_chars: int = 18,
+    min_duration_us: int = 0,
+    pause_us: int = 0,
+    max_chars_per_second: int = 20,
     style: Literal["standard", "minimal"] | None = None,
     output: Path | None = None,
     dry_run: bool = False,
@@ -290,7 +293,12 @@ def split_captions(
         )
         for subtitle in item.subtitles:
             parts, estimated = split_subtitle(
-                subtitle, words=words, source_in_us=item.source_in_us or 0, max_chars=max_chars
+                subtitle,
+                words=words,
+                source_in_us=item.source_in_us or 0,
+                max_chars=max_chars,
+                min_duration_us=min_duration_us,
+                pause_us=pause_us,
             )
             occupied.discard(subtitle.subtitle_id)
             for part in parts:
@@ -309,11 +317,22 @@ def split_captions(
                         "details": {"itemId": item.item_id, "subtitleId": subtitle.subtitle_id},
                     }
                 )
-            if any(len(compact(cue.text)) * 1_000_000 > 20 * cue.duration_us for cue in parts):
+            if any(
+                len(compact(cue.text)) * 1_000_000 > max_chars_per_second * cue.duration_us
+                for cue in parts
+            ):
                 warnings.append(
                     {
                         "code": "subtitle_readability_review",
-                        "message": "A cue exceeds the 20 characters/second review heuristic.",
+                        "message": "A cue exceeds the configured reading-speed heuristic.",
+                        "details": {"itemId": item.item_id, "subtitleId": subtitle.subtitle_id},
+                    }
+                )
+            if any(cue.duration_us < min_duration_us for cue in parts):
+                warnings.append(
+                    {
+                        "code": "subtitle_display_too_short",
+                        "message": "Cue bounds or pauses prevent the minimum display time.",
                         "details": {"itemId": item.item_id, "subtitleId": subtitle.subtitle_id},
                     }
                 )
@@ -328,4 +347,28 @@ def split_captions(
         dry_run=dry_run,
         item_ids=[i.item_id for i in selected],
         warnings=warnings,
+    )
+
+
+def set_audio_policy(
+    config: ProjectConfig,
+    document: CutList,
+    original_path: Path,
+    *,
+    edge_fade_us: int,
+    output: Path | None = None,
+    dry_run: bool = False,
+) -> RevisionResult:
+    if not 0 <= edge_fade_us <= 50_000:
+        raise UsageError("audio_edge_fade_invalid", "Edge fade must be 0–50000 microseconds.")
+    revised = document.model_copy(deep=True)
+    revised.audio_policy.edge_fade_us = edge_fade_us
+    return publish_revision(
+        config,
+        original_path,
+        revised,
+        output=output,
+        dry_run=dry_run,
+        item_ids=[i.item_id for i in _items(revised, None)],
+        warnings=[],
     )

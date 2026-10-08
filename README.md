@@ -139,3 +139,17 @@ uv run pytest
 ```
 
 See the [V1 product requirements](docs/prds/interview-edit-cli-skill-v1.md), [project configuration](docs/specs/project-config-v1.md), [CLI contract](docs/specs/cli-contract-v1.md), [cut-list contract](docs/specs/cutlist-schema-v1.md), [operation-run protocol](docs/specs/operation-run-v1.md), [render-run protocol](docs/specs/render-run-v1.md), [QC report protocol](docs/specs/qc-report-v1.md), [frozen-version protocol](docs/specs/version-manifest-v1.md), [media-index protocol](docs/specs/media-index-v1.md), [transcript/sync protocol](docs/specs/transcript-and-sync-v1.md), [M6 plan](docs/plans/m6-skill-and-beta-acceptance.md), [M7 synthetic-matrix plan](docs/plans/m7-synthetic-creator-matrix-and-intake.md), [M7 acceptance evidence](docs/tests/m7-synthetic-creator-matrix.md), [real-media Beta intake checklist](docs/tests/real-media-beta-checklist.md), [V1 release-readiness evidence](docs/tests/v1-release-readiness.md), [Skill benchmark](docs/research/2026-09-04-interview-edit-skill-benchmark.md), [Skill orchestration ADR](docs/decisions/0008-state-aware-skill-orchestration.md), and [artifact/evidence hardening ADR](docs/decisions/0009-artifact-boundaries-and-evidence-freshness.md).
+
+## Editorial evidence and pacing
+
+Use `review transcript --project PROJECT` to produce a source-linked phrase reading view across
+completed transcripts. `review timeline --project PROJECT --run RENDER_ID --focus-us 800000`
+creates a cut-window filmstrip with actual frame times, absolute audio waveform and source-mapped
+words; `--asset ASSET_ID` reviews source proxies. Its JSON output omits recognized text. Review
+files contain content, so observe the project's privacy mode before exposing them to an agent.
+
+For a new pacing revision, use `cutlist audio --edge-fade-us 5000` to smooth discontinuous audio
+edges, and `cutlist captions --pause-us 300000 --min-duration-us 350000 --max-cps 20` to improve
+caption display timing. Supply `--project` and `--cutlist`; then validate/render the returned revision.
+Contiguous source audio is preserved, unresolved timing constraints remain warnings, and actual
+picture/sound quality still requires review. See [editorial review contract](docs/specs/editorial-review-v1.md).

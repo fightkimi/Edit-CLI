@@ -177,12 +177,17 @@ class SubtitlePolicy(CutListModel):
     style: Literal["standard", "minimal"] = "standard"
 
 
+class AudioPolicy(CutListModel):
+    edge_fade_us: int = Field(default=0, ge=0, le=50_000, strict=True)
+
+
 class CutList(CutListModel):
     schema_version: Literal["1"] = "1"
     project_id: str = Field(pattern=r"^prj_[a-z0-9][a-z0-9_-]{5,63}$")
     timeline: TimelineSpec = Field(default_factory=TimelineSpec)
     acts: list[Act] = Field(default_factory=list)
     subtitle_policy: SubtitlePolicy = Field(default_factory=SubtitlePolicy)
+    audio_policy: AudioPolicy = Field(default_factory=AudioPolicy)
     render_profile: str = Field(default="preview", pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
