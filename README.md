@@ -77,7 +77,14 @@ See [editable Jianying handoff](docs/specs/jianying-draft-v1.md).
 For short animated callouts, lower-thirds and chapter cards, use `motion build`, `motion edit`,
 `motion verify` and `cutlist motion`. Each transparent movie keeps a source specification; editing
 generates a new immutable asset. See [local motion contract](docs/specs/motion-assets-v1.md).
-These graphics work in CLI previews; editable native Jianying motion mapping remains unsupported.
+These graphics work in CLI previews. Opt-in `export jianying --native-effects` puts the verified MOV
+on its own native track and bundles source/font for `motion from-spec` regeneration. Movie pixels
+remain different from native editable text. The same opt-in maps brightness/contrast/saturation;
+gamma remains unsupported and native appearance is unverified.
+`jianying export-video` creates a durable job; `finish-export` checks and publishes a selected native
+MP4. Optional Windows 5.x/6.x automation uses `run-export --approve` and the `native-windows` extra.
+Modern Mac/Windows clients use the manual completion path. See
+[native effects/export jobs](docs/specs/native-effects-export-jobs-v1.md).
 
 ```bash
 interview-edit --help

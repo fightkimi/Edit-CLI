@@ -40,6 +40,7 @@ interview-edit cutlist motion
 interview-edit motion build
 interview-edit motion edit
 interview-edit motion verify
+interview-edit motion from-spec
 
 interview-edit render
 interview-edit qc
@@ -47,6 +48,10 @@ interview-edit qc
 interview-edit export jianying
 interview-edit jianying doctor
 interview-edit jianying install
+interview-edit jianying export-video
+interview-edit jianying run-export
+interview-edit jianying finish-export
+interview-edit jianying export-status
 
 interview-edit version freeze
 interview-edit version list
@@ -58,7 +63,9 @@ Every command shown above is implemented. No nonfunctional placeholder is expose
 
 Local motion commands and the `motion` overlay extension are specified in
 [motion-assets-v1.md](motion-assets-v1.md). Generated movies retain editable source specifications;
-native Jianying motion mapping is explicitly unsupported.
+default native Jianying export rejects motion until the experimental mapping is explicitly enabled.
+Opt-in native effects and export-job behavior are specified in
+[native-effects-export-jobs-v1.md](native-effects-export-jobs-v1.md); default export remains strict.
 
 ## M1 behavior
 

@@ -77,6 +77,12 @@ jobs:
         with:
           version: "0.11.19"
       - run: uv sync --locked --group dev
+      - name: Install optional Windows driver dependencies (no client launch)
+        if: runner.os == 'Windows'
+        run: uv sync --locked --group dev --extra native-windows
+      - name: Check installed optional SDK interfaces (no GUI)
+        if: runner.os == 'Windows'
+        run: uv run --extra native-windows python -c "import inspect, pyJianYingDraft as d; from pyJianYingDraft.jianying_controller import ControlFinder; assert callable(ControlFinder.desc_matcher); assert hasattr(d.JianyingController, 'get_window'); assert 'timeout' in inspect.signature(d.JianyingController.export_draft).parameters; assert d.ExportResolution.RES_1080P; assert d.ExportFramerate.FR_25"
       - name: Install Mac media tools
         if: runner.os == 'macOS'
         run: brew install ffmpeg
@@ -93,6 +99,8 @@ jobs:
         run: uv run pytest tests/unit/test_color_policy.py tests/integration/test_color_quality.py
       - name: Local editable motion source and alpha composition
         run: uv run pytest tests/unit/test_motion_spec.py tests/integration/test_motion_workflow.py
+      - name: Native effects and export job contracts (simulated driver, no GUI)
+        run: uv run pytest tests/unit/test_native_worker.py tests/integration/test_native_effects.py tests/integration/test_native_export_jobs.py
       - name: CLI import and command registration
         run: |
           uv run interview-edit jianying --help

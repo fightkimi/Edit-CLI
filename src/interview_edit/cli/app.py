@@ -35,9 +35,11 @@ from interview_edit.exit_codes import ExitCode
 from interview_edit.export.jianying import export_jianying, verify_draft
 from interview_edit.export.jianying_install import install_draft
 from interview_edit.export.jianying_output import check_output
+from interview_edit.export.native_jobs import create_job, finish_job, load_job, run_legacy_job
 from interview_edit.ingest.service import IngestRequest, ingest_media, read_media_index
 from interview_edit.models.cutlist import CutList
 from interview_edit.models.motion import MotionSpec
+from interview_edit.models.native_export import NativeExportJob
 from interview_edit.models.protocol import (
     ArtifactReference,
     ErrorPayload,
@@ -45,7 +47,13 @@ from interview_edit.models.protocol import (
     WarningPayload,
 )
 from interview_edit.models.qc import QCFindingSeverity, QCPolicy
-from interview_edit.motion.service import MotionResult, build_motion, revise_motion, verify_motion
+from interview_edit.motion.service import (
+    MotionResult,
+    build_motion,
+    import_motion_spec,
+    revise_motion,
+    verify_motion,
+)
 from interview_edit.project.service import InitRequest, initialize_project
 from interview_edit.proxy.service import ProxyRequest, build_proxies
 from interview_edit.qc.service import QCRequest, run_qc
@@ -1344,6 +1352,39 @@ def motion_verify_command(
     )
 
 
+@motion_app.command("from-spec")
+def motion_from_spec_command(
+    ctx: typer.Context,
+    spec: Annotated[Path, typer.Option("--spec")],
+    font: Annotated[Path | None, typer.Option("--font")] = None,
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Regenerate a portable source specification into this project's artifact root."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config = load_project_config(_selected_project(project, options.project))
+        result = import_motion_spec(
+            config,
+            spec,
+            font=font,
+            dry_run=options.dry_run,
+            progress=None if options.quiet else _emit_progress,
+        )
+    except InterviewEditError as error:
+        _fail(error, command="motion from-spec", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError("motion_io_failed", "Could not read or write motion resources."),
+            command="motion from-spec",
+            json_output=machine,
+        )
+        return
+    _emit_motion(result, "motion from-spec", machine)
+
+
 @cutlist_app.command("motion")
 def cutlist_motion_command(
     ctx: typer.Context,
@@ -2084,6 +2125,13 @@ def jianying_export_command(
             help="Copy original media/fonts for a portable editable project.",
         ),
     ] = True,
+    native_effects: Annotated[
+        bool,
+        typer.Option(
+            "--native-effects",
+            help="Opt into experimental native slider and motion-track mappings.",
+        ),
+    ] = False,
     resume: Annotated[
         bool,
         typer.Option(
@@ -2105,6 +2153,7 @@ def jianying_export_command(
             name=name,
             target=target,
             bundle_media=bundle_media,
+            native_effects=native_effects,
             dry_run=options.dry_run,
             resume=resume,
             progress=None if options.quiet else _emit_progress,
@@ -2132,8 +2181,22 @@ def jianying_export_command(
                 "dryRun": result.dry_run,
                 "nativeValidation": "not_run",
                 "exportId": result.manifest.export_id if result.manifest else None,
+                "nativeEffects": native_effects,
             },
             warnings=[
+                *(
+                    [
+                        WarningPayload(
+                            code="jianying_effects_experimental",
+                            message=(
+                                "Native sliders are not pixel-equivalent; "
+                                "motion text needs source regeneration."
+                            ),
+                        )
+                    ]
+                    if native_effects
+                    else []
+                ),
                 WarningPayload(
                     code="jianying_client_unverified",
                     message="Native app import, editing and rendering have not been verified.",
@@ -2294,6 +2357,186 @@ def jianying_check_output_command(
             "Output media checks passed. Review picture, subtitles and sound in the editor."
         ],
     )
+
+
+def _emit_native_job(
+    root: Path, job: NativeExportJob, command: str, machine: bool, *, dry_run: bool = False
+) -> None:
+    emit(
+        JsonEnvelope(
+            ok=True,
+            command=command,
+            runId=job.job_id,
+            data={
+                "jobId": job.job_id,
+                "state": job.state,
+                "backend": job.backend,
+                "jobPath": str(root / "job.json"),
+                "incomingPath": str(root / "incoming.mp4"),
+                "outputPath": str(root / "result/video.mp4") if job.state == "succeeded" else None,
+                "errorCode": job.error_code,
+                "dryRun": dry_run,
+                "nativeValidation": "not_run",
+            },
+            warnings=[
+                WarningPayload(
+                    code="jianying_native_acceptance_pending",
+                    message=(
+                        "Completion means media checks; "
+                        "client editability and visual acceptance are separate."
+                    ),
+                )
+            ],
+            artifacts=[]
+            if dry_run
+            else [ArtifactReference(kind="native-export-job", path=str(root / "job.json"))],
+        ),
+        json_output=machine,
+        human_lines=[
+            f"Native export job: {job.job_id}",
+            f"State: {job.state}",
+            f"Incoming video: {root / 'incoming.mp4'}",
+        ],
+    )
+
+
+@jianying_app.command("export-video")
+def native_export_video_command(
+    ctx: typer.Context,
+    draft: Annotated[Path, typer.Option("--draft")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    backend: Annotated[Literal["manual", "windows-legacy"], typer.Option("--backend")] = "manual",
+    installed_draft: Annotated[Path | None, typer.Option("--installed-draft")] = None,
+    expected_duration_us: Annotated[
+        int | None, typer.Option("--expected-duration-us", min=1)
+    ] = None,
+    approve: Annotated[bool, typer.Option("--approve")] = False,
+    timeout_seconds: Annotated[int, typer.Option("--timeout-seconds", min=30, max=3600)] = 1200,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Prepare an export job; --approve runs the optional Windows <=6 native driver."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config = load_project_config(_selected_project(project, options.project))
+        if approve and backend == "manual":
+            raise UsageError(
+                "jianying_manual_backend", "Manual jobs finish with a user-selected completed MP4."
+            )
+        root, job = create_job(
+            config,
+            draft,
+            backend=backend,
+            installed=installed_draft,
+            expected_duration_us=expected_duration_us,
+            dry_run=options.dry_run,
+        )
+        if approve and not options.dry_run:
+            root, job = run_legacy_job(
+                config, job.job_id, approved=True, timeout_seconds=timeout_seconds
+            )
+    except InterviewEditError as error:
+        _fail(error, command="jianying export-video", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError(
+                "jianying_io_failed", "Could not read or write native export resources."
+            ),
+            command="jianying export-video",
+            json_output=machine,
+        )
+        return
+    _emit_native_job(root, job, "jianying export-video", machine, dry_run=options.dry_run)
+
+
+@jianying_app.command("run-export")
+def native_run_export_command(
+    ctx: typer.Context,
+    job: Annotated[str, typer.Option("--job")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    approve: Annotated[bool, typer.Option("--approve")] = False,
+    timeout_seconds: Annotated[int, typer.Option("--timeout-seconds", min=30, max=3600)] = 1200,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Run a previously prepared Windows <=6 export job with explicit approval."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config = load_project_config(_selected_project(project, options.project))
+        root, record = (
+            load_job(config, job)
+            if options.dry_run
+            else run_legacy_job(config, job, approved=approve, timeout_seconds=timeout_seconds)
+        )
+    except InterviewEditError as error:
+        _fail(error, command="jianying run-export", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError(
+                "jianying_io_failed", "Could not read or write native export resources."
+            ),
+            command="jianying run-export",
+            json_output=machine,
+        )
+        return
+    _emit_native_job(root, record, "jianying run-export", machine, dry_run=options.dry_run)
+
+
+@jianying_app.command("finish-export")
+def native_finish_export_command(
+    ctx: typer.Context,
+    job: Annotated[str, typer.Option("--job")],
+    video: Annotated[Path, typer.Option("--video")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Check and atomically publish a completed native video without overwriting prior output."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config = load_project_config(_selected_project(project, options.project))
+        root, record = load_job(config, job) if options.dry_run else finish_job(config, job, video)
+    except InterviewEditError as error:
+        _fail(error, command="jianying finish-export", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError(
+                "jianying_io_failed", "Could not read or write native export resources."
+            ),
+            command="jianying finish-export",
+            json_output=machine,
+        )
+        return
+    _emit_native_job(root, record, "jianying finish-export", machine, dry_run=options.dry_run)
+
+
+@jianying_app.command("export-status")
+def native_export_status_command(
+    ctx: typer.Context,
+    job: Annotated[str, typer.Option("--job")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Inspect an input-bound export job and recover a committed completion receipt."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config = load_project_config(_selected_project(project, options.project))
+        root, record = load_job(config, job)
+    except InterviewEditError as error:
+        _fail(error, command="jianying export-status", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError("jianying_io_failed", "Could not inspect the export job."),
+            command="jianying export-status",
+            json_output=machine,
+        )
+        return
+    _emit_native_job(root, record, "jianying export-status", machine)
 
 
 @jianying_app.command("install")

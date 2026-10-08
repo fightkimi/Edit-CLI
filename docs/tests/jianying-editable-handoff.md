@@ -36,6 +36,10 @@ checks without a Jianying GUI**. They must not be described as native app compat
 
 ## Native acceptance matrix (updated 2026-10-08)
 
+The user subsequently deferred further physical acceptance while authorizing development of native
+effects and export jobs. No additional real-client step was run. See
+[development verification](native-effects-export-jobs.md) for the new serialization/job evidence.
+
 The user authorized official App Store installation and resumed Mac acceptance. The installed
 client is Jianying Pro 11.5.0 on macOS 26.6.2. `jianying doctor` detects the correct bundle and
 native project directory. With the app closed, `jianying install` installed the previously verified

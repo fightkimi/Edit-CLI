@@ -17,6 +17,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+native-windows = [
+  "pyJianYingDraft==0.3.0; sys_platform == 'win32'",
+]
 mlx = [
   "mlx-whisper==0.4.3; platform_system == 'Darwin' and platform_machine == 'arm64'",
 ]

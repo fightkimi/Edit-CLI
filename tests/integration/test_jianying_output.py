@@ -30,6 +30,17 @@ def test_native_output_is_checked_independently_and_does_not_certify_app(tmp_pat
     assert result.sha256 and result.decode_checked
 
 
+def test_requested_native_frame_rate_is_checked(tmp_path):
+    config, path, doc = setup(tmp_path)
+    package = export_jianying(config, doc, path, name="fps").draft_path
+    video = tmp_path / "fps.mp4"
+    make_video(video)
+    assert check_output(package, video, expected_frame_rate="25/1").frame_rate == "25/1"
+    with pytest.raises(PreflightError) as mismatch:
+        check_output(package, video, expected_frame_rate="30/1")
+    assert mismatch.value.code == "jianying_output_frame_rate"
+
+
 def test_output_changed_duration_needs_explicit_new_expectation(tmp_path):
     config, path, doc = setup(tmp_path)
     package = export_jianying(config, doc, path, name="output").draft_path

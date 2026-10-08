@@ -2,7 +2,9 @@
 
 Status: experimental native protocol. Export and installation target both macOS and Windows.
 No Jianying app/version is certified by this project yet. This document supersedes the initial
-v1 manifest contract; newly generated packages use manifest schema **2**.
+v1 manifest contract; strict packages use schema **2**, opt-in `--native-effects` packages use **3**.
+See [native effects and export jobs](native-effects-export-jobs-v1.md) for the schema extension,
+portable motion sources and the bounded optional Windows legacy export backend.
 
 ## User workflow
 

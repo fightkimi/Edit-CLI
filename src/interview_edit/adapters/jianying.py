@@ -13,13 +13,16 @@ from uuid import uuid4
 
 from PIL import Image
 
-from interview_edit.adapters.filesystem import quick_fingerprint
+from interview_edit.adapters.filesystem import quick_fingerprint, sha256_file
 from interview_edit.config.models import ProjectConfig
 from interview_edit.cutlist.audio import edge_fades
 from interview_edit.cutlist.timing import map_source_range, visual_intervals
 from interview_edit.errors import PreflightError
-from interview_edit.models.cutlist import CutList, TimelineItem
+from interview_edit.export.native_color import native_color_values
+from interview_edit.models.cutlist import ColorCorrection, CutList, TimelineItem
+from interview_edit.models.jianying import DraftMotion
 from interview_edit.models.media import MediaAsset, MediaIndex
+from interview_edit.motion.service import verify_motion
 from interview_edit.project.layout import canonical
 
 DRAFT_PATH = "##_draftpath_placeholder_0E685133-18CE-45ED-8CB8-2904A212EC80_##"
@@ -52,6 +55,7 @@ class DraftBuilder:
     cutlist_path: Path
     index: MediaIndex
     bundle_media: bool
+    native_effects: bool = False
     materials: dict[str, Any] = field(default_factory=lambda: template("project")["materials"])
     tracks: dict[str, dict[str, Any]] = field(default_factory=dict)
     resources: dict[Path, str] = field(default_factory=dict)
@@ -61,6 +65,51 @@ class DraftBuilder:
     source_map: list[dict[str, Any]] = field(default_factory=list)
     active_item: TimelineItem | None = None
     item_start_us: int = 0
+    motion_assets: dict[str, DraftMotion] = field(default_factory=dict)
+
+    def motion(self, value: str, overlay_id: str) -> str:
+        root = self.asset_path(value)
+        spec, manifest = verify_motion(self.config, root)
+        if manifest.asset_id in self.motion_assets:
+            self.motion_assets[manifest.asset_id].inputs[overlay_id] = value
+            return self.media_ids[(manifest.asset_id, "video")]
+        font = canonical(Path(spec.font_path))
+        if not font.is_file() or sha256_file(font) != manifest.font_sha256:
+            raise PreflightError(
+                "jianying_motion_font_changed",
+                "Regenerate motion with its font before portable export.",
+            )
+        resources = {
+            p.relative_path: self.resource(root / p.relative_path).split(DRAFT_PATH + "/")[-1]
+            for p in manifest.files
+        }
+        resources["manifest.json"] = self.resource(root / "manifest.json").split(DRAFT_PATH + "/")[
+            -1
+        ]
+        resources["font"] = self.resource(font).split(DRAFT_PATH + "/")[-1]
+        self.motion_assets[manifest.asset_id] = DraftMotion(
+            source_path=str(root),
+            spec=spec,
+            manifest=manifest,
+            resources=resources,
+            inputs={overlay_id: value},
+        )
+        identifier = new_id()
+        data = template("video")
+        data.update(
+            id=identifier,
+            material_id=identifier,
+            local_material_id=identifier,
+            material_name=f"Motion {spec.template}",
+            path=self.resource(root / "render.mov"),
+            duration=manifest.duration_us,
+            width=spec.width,
+            height=spec.height,
+            has_audio=False,
+        )
+        self.materials["videos"].append(data)
+        self.media_ids[(manifest.asset_id, "video")] = identifier
+        return identifier
 
     def fade_keyframes(self, start: int, duration: int, *, audio: bool) -> list[dict[str, Any]]:
         item = self.active_item
@@ -223,6 +272,28 @@ class DraftBuilder:
                 {"id": speed_id, "type": "speed", "mode": 0, "speed": speed, "curve_speed": None}
             )
             data["extra_material_refs"] = [speed_id]
+        if kind == "video" and source_id and self.native_effects:
+            correction = self.document.color_policy.by_source.get(source_id, ColorCorrection())
+            for prop, value in native_color_values(correction).items():
+                data["common_keyframes"].append(
+                    {
+                        "id": new_id(),
+                        "material_id": "",
+                        "property_type": prop,
+                        "keyframe_list": [
+                            {
+                                "id": new_id(),
+                                "curveType": "Line",
+                                "graphID": "",
+                                "left_control": {"x": 0.0, "y": 0.0},
+                                "right_control": {"x": 0.0, "y": 0.0},
+                                "time_offset": offset,
+                                "values": [value],
+                            }
+                            for offset in (0, duration)
+                        ],
+                    }
+                )
         track["segments"].append(data)
         self.source_map.append(
             {
@@ -372,13 +443,21 @@ class DraftBuilder:
                             item_id=item.item_id,
                         )
                     else:
-                        if overlay.kind == "broll":
+                        motion_id = None
+                        if overlay.kind == "motion":
+                            identifier = self.motion(overlay.motion_path or "", overlay.overlay_id)
+                            motion_id = next(
+                                aid
+                                for (aid, kind), mid in self.media_ids.items()
+                                if mid == identifier and kind == "video"
+                            )
+                        elif overlay.kind == "broll":
                             asset = assets[overlay.source_id or ""]
                             identifier = self.media(asset)
                         else:
                             identifier = self.still(overlay.image_path or "", overlay.duration_us)
                         self.segment(
-                            "B-roll 与图片",
+                            "动效" if motion_id else "B-roll 与图片",
                             "video",
                             identifier,
                             cursor + overlay.start_us,
@@ -386,7 +465,7 @@ class DraftBuilder:
                             source_start=overlay.source_in_us or 0,
                             layer=10,
                             item_id=item.item_id,
-                            source_id=overlay.source_id,
+                            source_id=motion_id or overlay.source_id,
                         )
                 if self.document.subtitle_policy.enabled:
                     for cue in item.subtitles:

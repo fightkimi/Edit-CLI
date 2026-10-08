@@ -44,6 +44,11 @@ preflight; cache fingerprints include the whole package. Encoder failure cleans 
 staging directory and preserves published assets. Dry-run checks inputs/layout without writing files.
 
 Source editability means changing retained parameters and regenerating a movie. Movie pixels are
-not native text layers. Jianying export rejects motion-containing cuts with
+not native text layers. Default Jianying export rejects motion-containing cuts with
 `jianying_motion_unsupported`; it must not omit graphics or claim native editable motion.
 Native title/subtitle/video/audio handoff remains a separate experimental path.
+
+Opt-in `--native-effects` maps a verified MOV to an independent native video track and bundles its
+source spec/font for `motion from-spec` regeneration. It does not create native editable motion text.
+See [native effects](native-effects-export-jobs-v1.md). Source import accepts a bounded specification
+and optional receiving-machine font override, producing a new immutable asset in the current project.

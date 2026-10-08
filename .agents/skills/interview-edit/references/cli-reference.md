@@ -151,7 +151,7 @@ that source's correction. Preview the returned revision and compare the scene in
 are finite/bounded and apply to actual camera/B-roll sources before text composition. They are not
 calibrated exposure/white balance. Known HDR is unsupported; unknown transfer is marked explicitly.
 
-Active CLI color policy has no verified native Jianying mapping. Editable export fails explicitly;
+Active CLI color policy has no verified native Jianying mapping. Default editable export fails explicitly;
 reset in a new revision for an original-based native handoff. Do not claim color parameters were
 preserved or infer native acceptance from preview evidence.
 
@@ -170,3 +170,17 @@ Asset source text, posters and movies are content-bearing; apply privacy.md befo
 The spec is editable through regeneration; movie pixels are not native text layers. Native Jianying
 mapping rejects these assets explicitly. Do not promise that new motion survives native handoff.
 See the maintained contract at docs/specs/motion-assets-v1.md.
+
+
+## Native effects and export jobs
+
+`export jianying --native-effects` opts into schema-3 mappings for brightness/contrast/saturation
+and independent motion MOV tracks. Gamma is unsupported; motion text requires source regeneration
+and is not a native text layer. `motion from-spec --spec FILE --font FONT` creates a new project
+asset from retained source parameters.
+
+`jianying export-video --draft PACKAGE` creates a planned manual job. `finish-export --job ID
+--video FILE` verifies/publishes actual completed media; `export-status --job ID` checks its binding
+and receipt. Optional `--backend windows-legacy` needs Windows 5.x/6.x and the native-windows extra;
+`run-export --job ID --approve` requests bounded GUI export. Modern clients have no automatic backend.
+Read jianying-handoff.md and docs/specs/native-effects-export-jobs-v1.md before orchestration.

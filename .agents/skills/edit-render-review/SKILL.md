@@ -66,4 +66,4 @@ For short callouts, lower-thirds and chapter cards, use the CLI's `motion build`
 → `cutlist motion` workflow. It retains editable source parameters and creates immutable transparent
 movies. Review entrance/hold/exit, longest text, main-audio continuity and subtitle collision in a
 preview with QC. It does not add animated subtitles, J/L cuts or native editable motion layers.
-Jianying export rejects motion overlays explicitly until that mapping is implemented and verified.
+Default Jianying export rejects motion overlays. Explicit --native-effects maps them to an independent MOV track and retains source/font for regeneration; movie text is not a native text layer and client appearance remains unverified.

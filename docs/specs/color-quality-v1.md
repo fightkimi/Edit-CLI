@@ -79,8 +79,12 @@ Known HDR is rejected because this feature provides no verified HDR tonemapping 
 
 ## Editable draft boundary
 
-`export jianying` rejects non-neutral color policy with `jianying_color_unsupported`, before copying
+Default `export jianying` rejects non-neutral color policy with `jianying_color_unsupported`, before copying
 resources. Current native templates do not have a tested mapping for these settings. To hand off an
 original-based editable draft, explicitly reset source corrections in a new revision and use the
 comparison as a guide for native manual grading. Do not represent baked or discarded color settings
 as editable native parameters. This does not resume paused native-client acceptance.
+
+Explicit `--native-effects` supports experimental native brightness/contrast/saturation keyframes,
+with independent snapshot checks. Gamma remains rejected. These sliders are not certified as
+pixel-equivalent to FFmpeg. See [native effects](native-effects-export-jobs-v1.md).

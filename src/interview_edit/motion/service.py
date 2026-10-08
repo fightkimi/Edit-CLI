@@ -215,3 +215,26 @@ def revise_motion(
             "motion_values_invalid", "Motion values exceed supported layout/timing bounds."
         ) from exc
     return build_motion(config, revised, dry_run=dry_run, progress=progress)
+
+
+def import_motion_spec(
+    config: ProjectConfig,
+    path: Path,
+    *,
+    font: Path | None = None,
+    dry_run: bool = False,
+    progress: Callable[[str], None] | None = None,
+) -> MotionResult:
+    try:
+        with path.open("rb") as source:
+            raw = source.read(256 * 1024 + 1)
+        if len(raw) > 256 * 1024:
+            raise ValueError("source too large")
+        spec = MotionSpec.model_validate_json(raw)
+    except (OSError, ValueError) as exc:
+        raise PreflightError(
+            "motion_source_invalid", "Select a bounded valid motion source specification."
+        ) from exc
+    if font is not None:
+        spec.font_path = str(font)
+    return build_motion(config, spec, dry_run=dry_run, progress=progress)

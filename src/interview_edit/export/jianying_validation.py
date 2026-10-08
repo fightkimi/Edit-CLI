@@ -6,11 +6,15 @@ import json
 import math
 from collections import Counter
 from fractions import Fraction
+from pathlib import Path
 from typing import Any
 
+from interview_edit.cutlist.color import correction_filter
 from interview_edit.errors import PreflightError
-from interview_edit.models.cutlist import CutList
+from interview_edit.export.native_color import native_color_values
+from interview_edit.models.cutlist import ColorCorrection, CutList
 from interview_edit.models.jianying import JianyingManifest
+from interview_edit.models.motion import MotionManifest, MotionSpec
 
 
 def require(condition: bool, path: str, message: str) -> None:
@@ -40,12 +44,29 @@ def span(value: Any, path: str) -> tuple[int, int]:
 
 
 def validate_native(
-    content: dict[str, Any], meta: dict[str, Any], manifest: JianyingManifest, snapshot: CutList
+    content: dict[str, Any],
+    meta: dict[str, Any],
+    manifest: JianyingManifest,
+    snapshot: CutList,
+    *,
+    package_root: Path | None = None,
 ) -> None:
     require(
         isinstance(content, dict) and isinstance(meta, dict),
         "root",
         "Native documents must be objects.",
+    )
+    require(
+        not manifest.native_effects
+        or all(v.gamma == 1 for v in snapshot.color_policy.by_source.values()),
+        "color_policy",
+        "Native gamma is unsupported.",
+    )
+    require(
+        manifest.native_effects
+        or not any(correction_filter(v) for v in snapshot.color_policy.by_source.values()),
+        "color_policy",
+        "Unmapped native color policy cannot be accepted.",
     )
     ids: set[str] = set()
 
@@ -240,14 +261,22 @@ def validate_native(
                     here,
                     "Auxiliary speed differs.",
                 )
+            seen_props: set[str] = set()
             for keyframes in segment.get("common_keyframes", []):
                 identifier(keyframes.get("id"), here + ".keyframes.id")
                 prop = keyframes.get("property_type")
+                color_prop = (
+                    manifest.native_effects
+                    and kind == "video"
+                    and prop in {"KFTypeBrightness", "KFTypeContrast", "KFTypeSaturation"}
+                )
                 require(
-                    prop == ("KFTypeVolume" if kind == "audio" else "KFTypeAlpha"),
+                    (color_prop or prop == ("KFTypeVolume" if kind == "audio" else "KFTypeAlpha"))
+                    and prop not in seen_props,
                     here,
                     "Unsupported keyframe property.",
                 )
+                seen_props.add(prop)
                 previous = -1
                 for point in keyframes.get("keyframe_list", []):
                     identifier(point.get("id"), here + ".keyframe.id")
@@ -265,7 +294,7 @@ def validate_native(
                         "Invalid keyframe values.",
                     )
                     require(
-                        number(values[0], here) <= 1,
+                        number(values[0], here, -1 if color_prop else 0) <= 1,
                         here,
                         "Fade value must be between zero and one.",
                     )
@@ -317,6 +346,7 @@ def validate_native(
             )
 
     item_ranges = {}
+    expected_motion: dict[tuple[str, int, int], str] = {}
     expected_text: Counter[tuple[str, int, int, str]] = Counter()
     cursor = 0
     for act in snapshot.acts:
@@ -327,6 +357,16 @@ def validate_native(
                     (item.item_id, cursor, item.timeline_duration_us, item.title_text or "")
                 ] += 1
             for overlay in item.overlays:
+                if overlay.kind == "motion":
+                    roots = [
+                        aid
+                        for aid, m in manifest.motion_assets.items()
+                        if m.inputs.get(overlay.overlay_id) == overlay.motion_path
+                    ]
+                    require(len(roots) == 1, "motion_assets", "Motion input provenance is missing.")
+                    expected_motion[
+                        (item.item_id, cursor + overlay.start_us, overlay.duration_us)
+                    ] = roots[0]
                 if overlay.kind == "title":
                     expected_text[
                         (
@@ -343,6 +383,7 @@ def validate_native(
                     ] += 1
             cursor += item.timeline_duration_us
     actual_text: Counter[tuple[str, int, int, str]] = Counter()
+    actual_motion: dict[tuple[str, int, int], str] = {}
     mapped = set()
     for row in manifest.source_map:
         mapping_id = row.get("segmentId")
@@ -370,6 +411,47 @@ def validate_native(
         category, material = materials[segment["material_id"]]
         if category == "texts":
             actual_text[(item_id, start, length, json.loads(material["content"])["text"])] += 1
+        row_source = row.get("sourceId")
+        if isinstance(row_source, str) and row_source in manifest.motion_assets:
+            key = (item_id, start, length)
+            require(key not in actual_motion, "motion_assets", "Duplicate motion segment.")
+            actual_motion[key] = row_source
+            spec = manifest.motion_assets[row_source].spec
+            require(
+                (material["width"], material["height"]) == (spec.width, spec.height),
+                "motion_assets",
+                "Motion canvas dimensions differ from source.",
+            )
+            require(
+                segment.get("source_timerange", {}).get("start") == 0,
+                "motion_assets",
+                "Motion source start changed.",
+            )
+        expected_color = (
+            native_color_values(
+                snapshot.color_policy.by_source.get(row_source or "", ColorCorrection())
+            )
+            if manifest.native_effects and category == "videos"
+            else {}
+        )
+        actual_color = {}
+        for group in segment.get("common_keyframes", []):
+            prop = group["property_type"]
+            if prop in {"KFTypeBrightness", "KFTypeContrast", "KFTypeSaturation"}:
+                points = group["keyframe_list"]
+                require(
+                    [p["time_offset"] for p in points] == [0, length]
+                    and len(points) == 2
+                    and points[0]["values"] == points[1]["values"],
+                    "color_policy",
+                    "Native color must retain constant input settings.",
+                )
+                actual_color[prop] = points[0]["values"][0]
+        require(
+            actual_color == expected_color,
+            "color_policy",
+            "Native color differs from input policy.",
+        )
         require(
             row.get("sourceId") == manifest.material_sources.get(segment["material_id"]),
             "source_map.sourceId",
@@ -395,6 +477,79 @@ def validate_native(
         "texts",
         "Native text or timing differs from the input snapshot.",
     )
+    require(
+        actual_motion == expected_motion,
+        "motion_assets",
+        "Motion timing or identity differs from input.",
+    )
+    for aid, motion in manifest.motion_assets.items():
+        spec_file = next((f for f in motion.manifest.files if f.relative_path == "spec.json"), None)
+        require(
+            spec_file is not None and spec_file.sha256 == motion.manifest.spec_sha256,
+            "motion_assets",
+            "Motion source digest differs.",
+        )
+        count = math.ceil(
+            Fraction(motion.spec.duration_us) * Fraction(motion.spec.frame_rate) / 1_000_000
+        )
+        require(
+            count == motion.manifest.frame_count
+            and abs(
+                motion.manifest.duration_us
+                - round(Fraction(count * 1_000_000) / Fraction(motion.spec.frame_rate))
+            )
+            <= 1,
+            "motion_assets",
+            "Motion frame timing differs.",
+        )
+        require(
+            aid == motion.manifest.asset_id and motion.manifest.project_id == manifest.project_id,
+            "motion_assets",
+            "Motion identity differs.",
+        )
+        require(
+            set(motion.resources)
+            == {"spec.json", "manifest.json", "render.mov", "poster.png", "font"},
+            "motion_assets",
+            "Motion source inventory differs.",
+        )
+        for name, relative in motion.resources.items():
+            record = next((f for f in manifest.files if f.relative_path == relative), None)
+            require(
+                record is not None and relative.startswith("Resources/"),
+                "motion_assets",
+                "Motion resource missing.",
+            )
+            assert record is not None
+            if name == "font":
+                require(
+                    record.sha256 == motion.manifest.font_sha256,
+                    "motion_assets",
+                    "Motion font differs.",
+                )
+            elif name in {"render.mov", "poster.png", "spec.json"}:
+                original = next((f for f in motion.manifest.files if f.relative_path == name), None)
+                require(
+                    original is not None
+                    and record.sha256 == original.sha256
+                    and record.size == original.size,
+                    "motion_assets",
+                    "Motion payload differs.",
+                )
+            if package_root is not None and name == "spec.json":
+                require(
+                    MotionSpec.model_validate_json((package_root / relative).read_text())
+                    == motion.spec,
+                    "motion_assets",
+                    "Retained motion source differs.",
+                )
+            if package_root is not None and name == "manifest.json":
+                require(
+                    MotionManifest.model_validate_json((package_root / relative).read_text())
+                    == motion.manifest,
+                    "motion_assets",
+                    "Retained motion manifest differs.",
+                )
     records = meta.get("draft_materials", [])
     registry: list[dict[str, Any]] = next(
         (r.get("value", []) for r in records if r.get("type") == 0), []
