@@ -84,7 +84,12 @@ def test_output_window_maps_clipped_words_and_rejects_replaced_video(project):
     )
     word = report.words[0]
     assert word.start_us == 0 and word.end_us == 800_000 and word.clipped
-    assert word.source_start_us == 0 and word.source_end_us == 1_200_000
+    raw = json.loads(
+        (config.artifact_root / "transcripts" / asset.asset_id / "corrected.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()[0]
+    )["words"][0]
+    assert word.source_start_us == raw["start_us"] and word.source_end_us == raw["end_us"]
     assert "word_clipped_at_cut" in report.warnings
     Path(rendered.output.path).write_bytes(b"replaced")
     with pytest.raises(PreflightError):
