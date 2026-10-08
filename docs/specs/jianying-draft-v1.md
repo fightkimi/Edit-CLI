@@ -140,3 +140,7 @@ this project's actual evidence. No upstream executable or new dependency is used
 Audio edge smoothing from `cutlist.audio_policy` is now exported as native volume keyframes. The
 same audio-range continuity calculation is shared with FFmpeg rendering, so contiguous primary audio
 is preserved across visual edits. This adds structural coverage, not a new native compatibility claim.
+
+A non-neutral `color_policy` now blocks editable export with `jianying_color_unsupported`.
+There is no verified native mapping for CLI source color parameters. Explicitly reset it in a new
+revision for an original-based handoff; native color acceptance remains paused/unverified.

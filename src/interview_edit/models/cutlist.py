@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from fractions import Fraction
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -181,6 +181,19 @@ class AudioPolicy(CutListModel):
     edge_fade_us: int = Field(default=0, ge=0, le=50_000, strict=True)
 
 
+class ColorCorrection(CutListModel):
+    brightness: float = Field(default=0, ge=-0.15, le=0.15, strict=True)
+    contrast: float = Field(default=1, ge=0.75, le=1.25, strict=True)
+    gamma: float = Field(default=1, ge=0.75, le=1.25, strict=True)
+    saturation: float = Field(default=1, ge=0, le=1.5, strict=True)
+
+
+class ColorPolicy(CutListModel):
+    by_source: dict[Annotated[str, Field(pattern=r"^asset_[a-f0-9]{24}$")], ColorCorrection] = (
+        Field(default_factory=dict)
+    )
+
+
 class CutList(CutListModel):
     schema_version: Literal["1"] = "1"
     project_id: str = Field(pattern=r"^prj_[a-z0-9][a-z0-9_-]{5,63}$")
@@ -188,6 +201,7 @@ class CutList(CutListModel):
     acts: list[Act] = Field(default_factory=list)
     subtitle_policy: SubtitlePolicy = Field(default_factory=SubtitlePolicy)
     audio_policy: AudioPolicy = Field(default_factory=AudioPolicy)
+    color_policy: ColorPolicy = Field(default_factory=ColorPolicy)
     render_profile: str = Field(default="preview", pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 

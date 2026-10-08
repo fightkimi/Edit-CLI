@@ -18,6 +18,7 @@ from interview_edit.adapters.filesystem import quick_fingerprint, sha256_file
 from interview_edit.adapters.jianying import DRAFT_PATH, DraftBuilder, Target, template
 from interview_edit.adapters.verified_copy import copy_verified
 from interview_edit.config.models import ProjectConfig
+from interview_edit.cutlist.color import correction_filter
 from interview_edit.cutlist.service import parse_cutlist
 from interview_edit.cutlist.validation import validate_cutlist
 from interview_edit.errors import PathSafetyError, PreflightError, UsageError
@@ -104,6 +105,11 @@ def export_jianying(
             "jianying_cutlist_snapshot_mismatch", "Cut-list changed before export began."
         )
     document = document_snapshot
+    if any(correction_filter(v) for v in document.color_policy.by_source.values()):
+        raise PreflightError(
+            "jianying_color_unsupported",
+            "Native color mapping is unverified; reset source corrections before editable export.",
+        )
     cutlist_hash = hashlib.sha256(snapshot).hexdigest()
     report = validate_cutlist(config, document, cutlist_path=cutlist_path, profile_name="master")
     if not report.ok:

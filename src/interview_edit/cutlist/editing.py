@@ -372,3 +372,49 @@ def set_audio_policy(
         item_ids=[i.item_id for i in _items(revised, None)],
         warnings=[],
     )
+
+
+def set_source_color(
+    config: ProjectConfig,
+    document: CutList,
+    original_path: Path,
+    *,
+    asset_id: str,
+    values: dict[str, float],
+    reset: bool = False,
+    output: Path | None = None,
+    dry_run: bool = False,
+) -> RevisionResult:
+    from pydantic import ValidationError
+
+    from interview_edit.models.cutlist import ColorCorrection
+
+    if reset and values:
+        raise UsageError("color_reset_conflict", "Do not combine reset with correction values.")
+    if not reset and not values:
+        raise UsageError("color_values_required", "Provide a correction parameter or reset.")
+    revised = document.model_copy(deep=True)
+    if reset:
+        revised.color_policy.by_source.pop(asset_id, None)
+    else:
+        current = revised.color_policy.by_source.get(asset_id, ColorCorrection())
+        try:
+            updated = ColorCorrection.model_validate({**current.model_dump(), **values})
+        except ValidationError as exc:
+            raise UsageError(
+                "color_values_invalid",
+                "Color parameters must be finite and within supported bounds.",
+            ) from exc
+        if updated == ColorCorrection():
+            revised.color_policy.by_source.pop(asset_id, None)
+        else:
+            revised.color_policy.by_source[asset_id] = updated
+    return publish_revision(
+        config,
+        original_path,
+        revised,
+        output=output,
+        dry_run=dry_run,
+        item_ids=[i.item_id for i in _items(revised, None)],
+        warnings=[],
+    )

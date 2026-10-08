@@ -339,3 +339,8 @@ with the existing envelope and exit codes. Audio decode failure is not reported 
 `cutlist audio --edge-fade-us 5000` writes a new validated audio-policy revision.
 `cutlist captions` adds opt-in `--pause-us`, `--min-duration-us` and configurable `--max-cps`.
 The complete additive command and artifact contract is [editorial-review-v1.md](editorial-review-v1.md).
+
+`review color` adds bounded source sampling and original/corrected contact sheets with numeric
+statistics. `cutlist color` creates validated source-correction revisions and supports reset.
+See [color-quality-v1.md](color-quality-v1.md). Suggestions do not silently modify a cut-list;
+unsupported native color export fails explicitly rather than omitting a setting.

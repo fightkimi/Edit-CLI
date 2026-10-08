@@ -10,6 +10,7 @@ from PIL import Image
 from interview_edit.adapters.artifacts import validated_video_proxy
 from interview_edit.adapters.text import inspect_text_layout
 from interview_edit.config.models import ProjectConfig
+from interview_edit.cutlist.color import correction_filter, is_hdr
 from interview_edit.errors import InterviewEditError
 from interview_edit.ingest.service import read_media_index
 from interview_edit.models.cutlist import (
@@ -255,6 +256,22 @@ def validate_cutlist(
             errorDetails=exc.details,
         )
     assets = {asset.asset_id: asset for asset in index.assets} if index is not None else {}
+    for source_id, grade in cutlist.color_policy.by_source.items():
+        asset = assets.get(source_id)
+        if asset is None or asset.video_stream is None:
+            _issue(
+                issues,
+                "color_source_unknown",
+                "Color policy requires an indexed video source.",
+                path=f"color_policy.by_source.{source_id}",
+            )
+        elif correction_filter(grade) and is_hdr(asset.video_stream.color_transfer):
+            _issue(
+                issues,
+                "color_hdr_unsupported",
+                "Color correction requires an SDR source; HDR tonemapping is not implemented.",
+                path=f"color_policy.by_source.{source_id}",
+            )
     checked_sources: set[str] = set()
 
     ids: dict[str, str] = {}

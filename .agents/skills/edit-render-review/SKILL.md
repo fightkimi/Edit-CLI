@@ -52,3 +52,11 @@ Research pointers: [official skill repository](https://github.com/remotion-dev/s
 [X demonstration discussion](https://x.com/wcandillon/status/2015345960491069718).
 The official Skill repository had no declared repository license in the inspected snapshot;
 no source text or code from it is redistributed here.
+
+
+For supported SDR color work, use `review color` for original/after samples and `cutlist color` for
+source-specific revisions. Confirm the proposed/configured label and inspect the scene rather than
+judging by mean brightness alone. Neutral/low-variation graphics need no automatic brightening.
+Same-take reference cameras use existing sync evidence. Grading applies before text overlays;
+verify readability, highlights and scene consistency in the resulting preview. Known HDR and native
+Jianying color mapping are explicit gaps; do not silently drop a correction during handoff.

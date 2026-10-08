@@ -84,6 +84,57 @@
       "title": "CameraCut",
       "type": "object"
     },
+    "ColorCorrection": {
+      "additionalProperties": false,
+      "properties": {
+        "brightness": {
+          "default": 0,
+          "maximum": 0.15,
+          "minimum": -0.15,
+          "title": "Brightness",
+          "type": "number"
+        },
+        "contrast": {
+          "default": 1,
+          "maximum": 1.25,
+          "minimum": 0.75,
+          "title": "Contrast",
+          "type": "number"
+        },
+        "gamma": {
+          "default": 1,
+          "maximum": 1.25,
+          "minimum": 0.75,
+          "title": "Gamma",
+          "type": "number"
+        },
+        "saturation": {
+          "default": 1,
+          "maximum": 1.5,
+          "minimum": 0,
+          "title": "Saturation",
+          "type": "number"
+        }
+      },
+      "title": "ColorCorrection",
+      "type": "object"
+    },
+    "ColorPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "by_source": {
+          "patternProperties": {
+            "^asset_[a-f0-9]{24}$": {
+              "$ref": "#/$defs/ColorCorrection"
+            }
+          },
+          "title": "By Source",
+          "type": "object"
+        }
+      },
+      "title": "ColorPolicy",
+      "type": "object"
+    },
     "Overlay": {
       "additionalProperties": false,
       "properties": {
@@ -567,6 +618,9 @@
     },
     "audio_policy": {
       "$ref": "#/$defs/AudioPolicy"
+    },
+    "color_policy": {
+      "$ref": "#/$defs/ColorPolicy"
     },
     "render_profile": {
       "default": "preview",

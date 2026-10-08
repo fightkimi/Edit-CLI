@@ -136,3 +136,21 @@ Follow jianying-handoff.md. Neither file creation nor installation proves the cl
   Bounds/pauses can make the minimum impossible; report warnings and review, never force success.
 
 New review artifacts are evidence, not QC/native/listening acceptance. Dry-run creates no files.
+
+
+## SDR color diagnosis and correction
+
+`interview-edit review color --project PATH --asset ID [--in-us US] [--out-us US]
+[--samples 4] [--reference ID] [--cutlist REVISION] --json` produces original/after contact sheets,
+source-mapped frame evidence and numeric pixel statistics. Reference cameras require confirmed
+same-take sync. No cut-list means proposed settings; a supplied cut-list means configured settings.
+
+`interview-edit cutlist color --project PATH --cutlist PATH --asset ID --brightness 0.03 --gamma 1.05
+--json` creates a new validated revision. Omitted parameters preserve prior values; `--reset` removes
+that source's correction. Preview the returned revision and compare the scene intent. Corrections
+are finite/bounded and apply to actual camera/B-roll sources before text composition. They are not
+calibrated exposure/white balance. Known HDR is unsupported; unknown transfer is marked explicitly.
+
+Active CLI color policy has no verified native Jianying mapping. Editable export fails explicitly;
+reset in a new revision for an original-based native handoff. Do not claim color parameters were
+preserved or resume the user's paused native acceptance as an automatic fix.

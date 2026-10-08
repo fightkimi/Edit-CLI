@@ -16,6 +16,7 @@ from interview_edit.cutlist.editing import (
     RevisionResult,
     check_speech,
     set_audio_policy,
+    set_source_color,
     set_source_range,
     split_captions,
 )
@@ -46,6 +47,7 @@ from interview_edit.project.service import InitRequest, initialize_project
 from interview_edit.proxy.service import ProxyRequest, build_proxies
 from interview_edit.qc.service import QCRequest, run_qc
 from interview_edit.render.service import RenderRequest, render_cutlist
+from interview_edit.review.color import review_color
 from interview_edit.review.service import ReviewResult, phrase_view, timeline_review
 from interview_edit.status.service import read_project_status
 from interview_edit.sync.service import SyncRequest, parse_manual_offset, sync_take
@@ -1135,6 +1137,121 @@ def cutlist_captions_command(
         _fail(error, command="cutlist captions", json_output=machine)
         return
     _emit_revision(result, "cutlist captions", root, machine)
+
+
+@cutlist_app.command("color")
+def cutlist_color_command(
+    ctx: typer.Context,
+    asset: Annotated[str, typer.Option("--asset")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    cutlist: Annotated[Path | None, typer.Option("--cutlist")] = None,
+    brightness: Annotated[float | None, typer.Option("--brightness", min=-0.15, max=0.15)] = None,
+    contrast: Annotated[float | None, typer.Option("--contrast", min=0.75, max=1.25)] = None,
+    gamma: Annotated[float | None, typer.Option("--gamma", min=0.75, max=1.25)] = None,
+    saturation: Annotated[float | None, typer.Option("--saturation", min=0, max=1.5)] = None,
+    reset: Annotated[bool, typer.Option("--reset")] = False,
+    output: Annotated[Path | None, typer.Option("--output")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Write a source-specific SDR correction revision with finite, bounded parameters."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config, path, document, root = _editing_context(options, project, cutlist)
+        values = {
+            name: value
+            for name, value in dict(
+                brightness=brightness, contrast=contrast, gamma=gamma, saturation=saturation
+            ).items()
+            if value is not None
+        }
+        result = set_source_color(
+            config,
+            document,
+            path,
+            asset_id=asset,
+            values=values,
+            reset=reset,
+            output=output,
+            dry_run=options.dry_run,
+        )
+    except InterviewEditError as error:
+        _fail(error, command="cutlist color", json_output=machine)
+        return
+    _emit_revision(result, "cutlist color", root, machine)
+
+
+@review_app.command("color")
+def review_color_command(
+    ctx: typer.Context,
+    asset: Annotated[str, typer.Option("--asset")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    cutlist: Annotated[Path | None, typer.Option("--cutlist")] = None,
+    reference: Annotated[str | None, typer.Option("--reference")] = None,
+    in_us: Annotated[int, typer.Option("--in-us", min=0)] = 0,
+    out_us: Annotated[int | None, typer.Option("--out-us", min=1)] = None,
+    samples: Annotated[int, typer.Option("--samples", min=2, max=8)] = 4,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Create an original/corrected comparison and numerical pixel statistics for an SDR source."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        selected = _selected_project(project, options.project)
+        config = load_project_config(selected)
+        root = config_path_for(selected).parent
+        path = resolve_cutlist_path(root, cutlist) if cutlist else None
+        result = review_color(
+            config,
+            asset_id=asset,
+            start_us=in_us,
+            end_us=out_us,
+            reference_id=reference,
+            cutlist_path=path,
+            samples=samples,
+            dry_run=options.dry_run,
+        )
+    except InterviewEditError as error:
+        _fail(error, command="review color", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError("color_io_failed", "Could not read or write color evidence."),
+            command="review color",
+            json_output=machine,
+        )
+        return
+    report = result.report
+    emit(
+        JsonEnvelope(
+            ok=True,
+            command="review color",
+            data={
+                "reviewPath": str(result.path),
+                "sampleCount": result.count,
+                "dryRun": result.dry_run,
+                "qualityVerified": False,
+                "correctionStatus": report.correction_status if report else "planned",
+                "correction": report.correction.model_dump() if report else None,
+                "before": report.before.model_dump() if report else None,
+                "after": report.after.model_dump() if report else None,
+            },
+            artifacts=[]
+            if result.dry_run
+            else [ArtifactReference(kind="color-review", path=str(result.path))],
+            warnings=[
+                WarningPayload(
+                    code=code,
+                    message="Inspect color evidence and scene intent before applying changes.",
+                )
+                for code in result.warnings
+            ],
+        ),
+        json_output=machine,
+        human_lines=[
+            f"{'Would create' if result.dry_run else 'Created'} color review: {result.path}"
+        ],
+    )
 
 
 @cutlist_app.command("audio")

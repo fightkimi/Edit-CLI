@@ -153,3 +153,11 @@ edges, and `cutlist captions --pause-us 300000 --min-duration-us 350000 --max-cp
 caption display timing. Supply `--project` and `--cutlist`; then validate/render the returned revision.
 Contiguous source audio is preserved, unresolved timing constraints remain warnings, and actual
 picture/sound quality still requires review. See [editorial review contract](docs/specs/editorial-review-v1.md).
+
+For SDR picture correction, `review color --project PROJECT --asset ID` creates a bounded proposal
+with original/after images and pixel statistics. Use `--cutlist REVISION` to inspect configured
+correction, or `--reference ID` for a confirmed synchronized camera. Apply chosen settings with
+`cutlist color --project PROJECT --cutlist REVISION --asset ID --brightness 0.03 --gamma 1.05`.
+The returned revision applies source-specific settings before captions and B-roll composition;
+`--reset` removes them. Proposals need visual review, and known HDR/native color mapping are outside
+this verified path. See the [color contract](docs/specs/color-quality-v1.md).

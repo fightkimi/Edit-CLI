@@ -29,11 +29,13 @@ from interview_edit.adapters.render import (
 from interview_edit.adapters.text import render_text_png
 from interview_edit.config.models import ProjectConfig, RenderProfile
 from interview_edit.cutlist.audio import edge_fades
+from interview_edit.cutlist.color import correction_filter
 from interview_edit.cutlist.timing import map_source_range, visual_intervals
 from interview_edit.cutlist.validation import validate_cutlist
 from interview_edit.errors import InterviewEditError, PathSafetyError, PreflightError, UsageError
 from interview_edit.ingest.service import read_media_index
 from interview_edit.models.cutlist import (
+    ColorCorrection,
     CutList,
     OverlayKind,
     TimelineItem,
@@ -289,8 +291,9 @@ def _text_raster(
     return path
 
 
-def _normal_video_filter(profile: RenderProfile) -> str:
-    return (
+def _normal_video_filter(profile: RenderProfile, correction: ColorCorrection | None = None) -> str:
+    grade = correction_filter(correction)
+    return (grade + "," if grade else "") + (
         f"scale={profile.width}:{profile.height}:force_original_aspect_ratio=decrease,"
         f"pad={profile.width}:{profile.height}:(ow-iw)/2:(oh-ih)/2:color=black,"
         f"setsar=1,fps={profile.frame_rate},format=yuv420p"
@@ -459,9 +462,12 @@ def _build_item(
                 )
                 label = f"base{position}"
                 ratio = Fraction(interval.duration_us, interval.source_duration_us)
+                normal = _normal_video_filter(
+                    profile, request.cutlist.color_policy.by_source.get(interval.asset.asset_id)
+                )
                 filters.append(
                     f"[{input_index}:v:0]setpts=(PTS-STARTPTS)*{float(ratio):.12f},"
-                    f"{_normal_video_filter(profile)},trim=duration={seconds(interval.duration_us)},"
+                    f"{normal},trim=duration={seconds(interval.duration_us)},"
                     f"setpts=PTS-STARTPTS[{label}]"
                 )
                 video_labels.append(label)
@@ -521,8 +527,11 @@ def _build_item(
                 input_index = _add_media_input(
                     args, path, overlay.source_in_us, overlay.duration_us
                 )
+                normal = _normal_video_filter(
+                    profile, request.cutlist.color_policy.by_source.get(asset.asset_id)
+                )
                 filters.append(
-                    f"[{input_index}:v:0]{_normal_video_filter(profile)},"
+                    f"[{input_index}:v:0]{normal},"
                     f"trim=duration={seconds(overlay.duration_us)},"
                     f"setpts=PTS-STARTPTS+{seconds(overlay.start_us)}/TB[{overlay_label}]"
                 )
@@ -896,12 +905,24 @@ def render_cutlist(
                 assets=assets,
                 profile_name=profile_name,
             )
+            visual_ids = {overlay.source_id for overlay in item.overlays if overlay.source_id}
+            if source is not None:
+                visual_ids.update(
+                    interval.asset.asset_id
+                    for interval in visual_intervals(request.config, index, item, source, assets)
+                )
+            source_colors = {
+                aid: grade.model_dump(mode="json")
+                for aid, grade in request.cutlist.color_policy.by_source.items()
+                if aid in visual_ids and correction_filter(grade)
+            }
             cache_key = _canonical_hash(
                 {
                     "schema": "render-item-v3-pcm-audio",
                     "item": item.model_dump(mode="json"),
                     "subtitlePolicy": request.cutlist.subtitle_policy.model_dump(mode="json"),
                     "audioEdges": audio_edges,
+                    **({"sourceColors": source_colors} if source_colors else {}),
                     "profile": profile.model_dump(mode="json"),
                     "encoder": encoder,
                     "inputs": item_fingerprints,
