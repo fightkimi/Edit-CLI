@@ -35,6 +35,11 @@ interview-edit cutlist validate
 interview-edit cutlist set-range
 interview-edit cutlist captions
 interview-edit cutlist speech-check
+interview-edit cutlist motion
+
+interview-edit motion build
+interview-edit motion edit
+interview-edit motion verify
 
 interview-edit render
 interview-edit qc
@@ -50,6 +55,10 @@ interview-edit version verify
 ```
 
 Every command shown above is implemented. No nonfunctional placeholder is exposed.
+
+Local motion commands and the `motion` overlay extension are specified in
+[motion-assets-v1.md](motion-assets-v1.md). Generated movies retain editable source specifications;
+native Jianying motion mapping is explicitly unsupported.
 
 ## M1 behavior
 

@@ -34,19 +34,30 @@ CI now includes macOS 14 and Windows 2022 runners for platform contracts and the
 integration modules, in addition to the full Linux Python 3.11/3.12 checks. These are **OS execution
 checks without a Jianying GUI**. They must not be described as native app compatibility tests.
 
-## Native acceptance matrix
+## Native acceptance matrix (updated 2026-10-08)
+
+The user authorized official App Store installation and resumed Mac acceptance. The installed
+client is Jianying Pro 11.5.0 on macOS 26.6.2. `jianying doctor` detects the correct bundle and
+native project directory. With the app closed, `jianying install` installed the previously verified
+2.8-second schema-2 synthetic draft named `剪映可编辑验收-v2…5BC5`. After restart the app scanned
+and displayed it without a custom global registry write. Existing projects were preserved.
 
 | Platform | App/version | Discover/open | Edit tracks/text | Save/reopen | Native export | Result |
 |---|---|---|---|---|---|---|
-| macOS | Not installed | Pending | Pending | Pending | Pending | Unverified |
-| Windows | No test machine available, confirmed by user | Pending | Pending | Pending | Pending | Unverified |
+| macOS | Jianying 11.5.0 / macOS 26.6.2 | Discovery observed; open and independent tracks reported by user | Actual text change pending | Pending | Pending | Partial evidence |
+| Windows | No test machine, confirmed by user | Pending | Pending | Pending | Pending | Unverified |
 
-Mac `jianying doctor` returns exit 4 and `jianying_missing`. The official website bootstrap installer
-failed a local signature check and was not executed. The official App Store listing was reached,
-but automatic approval rejected clicking Get because explicit software-installation authorization
-was missing. The installation question remains pending; no alternate download or launch bypasses it.
-Windows remains a supported output target; the user explicitly confirmed native validation is
-currently unavailable. No version is added to a certified compatibility range.
+The computer-control tool repeatedly failed card clicks with `windowNotFoundAtPosition`; after
+manual opening it continued to expose the home window, not the user's editor. The user confirmed
+independent tracks were visible. This is user-observed evidence, not an independently captured
+editor test. The requested text edit, save/reopen and MP4 export have no completed result yet.
+The response “可以” authorizes that manual sequence but does not prove it succeeded. The local
+native-output directory is `artifacts/acceptance/native/`; no native output has been supplied.
+
+Native-created control files on this client are encrypted/non-JSON. They were not decrypted or
+used as a verified draft-format fixture. No certified compatibility range is declared from one
+open report. Source-based synthetic tests and OS CI remain distinct from native acceptance.
+The earlier App Store authorization blocker is resolved; Windows GUI remains unavailable.
 
 ## Repeatable native checklist after prerequisites are available
 
@@ -67,6 +78,6 @@ input snapshot hash and resulting video hash. Keep screenshots/media as local ev
 8. Only record native acceptance for the exact app/platform version and the features observed.
    Changes to discovery, registration or GUI automation need their own evidence and regression tests.
 
-Open issues remain client discoverability/registration, exact native field compatibility, native
-font/layout/sound fidelity, real save/reopen and export. No fixture from an actual installed client
-is available. The module remains experimental until those steps are observed.
+Open issues remain exact native field compatibility, font/layout/sound fidelity and actual
+save/reopen/export. Mac 11.5.0 discoverability has been observed for this synthetic package.
+The module remains experimental; local color corrections and motion overlays have no native mapping.

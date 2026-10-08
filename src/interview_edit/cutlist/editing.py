@@ -11,7 +11,14 @@ from interview_edit.cutlist.service import _read_corrected_transcript, serialize
 from interview_edit.cutlist.validation import validate_cutlist
 from interview_edit.errors import PathSafetyError, PreflightError, UsageError
 from interview_edit.ingest.service import read_media_index
-from interview_edit.models.cutlist import CameraCut, CutList, Overlay, Subtitle, TimelineItem
+from interview_edit.models.cutlist import (
+    CameraCut,
+    CutList,
+    Overlay,
+    OverlayKind,
+    Subtitle,
+    TimelineItem,
+)
 from interview_edit.models.transcript import TranscriptWord
 from interview_edit.project.layout import (
     artifact_path,
@@ -159,7 +166,7 @@ def check_speech(
 def _rebase_assets(document: CutList, original: Path) -> None:
     for item in _items(document, None):
         for entry in [item, *item.overlays, *item.subtitles]:
-            for field in ("font_path", "image_path"):
+            for field in ("font_path", "image_path", "motion_path"):
                 value = getattr(entry, field, None)
                 if value:
                     path = Path(value).expanduser()
@@ -416,5 +423,52 @@ def set_source_color(
         output=output,
         dry_run=dry_run,
         item_ids=[i.item_id for i in _items(revised, None)],
+        warnings=[],
+    )
+
+
+def attach_motion(
+    config: ProjectConfig,
+    document: CutList,
+    original_path: Path,
+    *,
+    item_id: str,
+    asset_path: Path,
+    start_us: int = 0,
+    duration_us: int | None = None,
+    output: Path | None = None,
+    dry_run: bool = False,
+) -> RevisionResult:
+    from interview_edit.motion.service import verify_motion
+
+    spec, _ = verify_motion(config, asset_path)
+    revised = document.model_copy(deep=True)
+    item = _items(revised, item_id)[0]
+    duration = spec.duration_us if duration_us is None else duration_us
+    if (
+        start_us < 0
+        or duration <= 0
+        or start_us + duration > item.timeline_duration_us
+        or duration > spec.duration_us
+    ):
+        raise UsageError(
+            "motion_attach_range_invalid", "Motion must fit both its source and selected item."
+        )
+    item.overlays.append(
+        Overlay(
+            overlay_id=f"motion-{uuid4().hex[:12]}",
+            kind=OverlayKind.MOTION,
+            start_us=start_us,
+            duration_us=duration,
+            motion_path=str(canonical(asset_path)),
+        )
+    )
+    return publish_revision(
+        config,
+        original_path,
+        revised,
+        output=output,
+        dry_run=dry_run,
+        item_ids=[item_id],
         warnings=[],
     )

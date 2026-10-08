@@ -153,4 +153,20 @@ calibrated exposure/white balance. Known HDR is unsupported; unknown transfer is
 
 Active CLI color policy has no verified native Jianying mapping. Editable export fails explicitly;
 reset in a new revision for an original-based native handoff. Do not claim color parameters were
-preserved or resume the user's paused native acceptance as an automatic fix.
+preserved or infer native acceptance from preview evidence.
+
+
+## Local motion graphics
+
+Use `motion build --project PATH --template callout|lower_third|chapter --text TEXT --font FONT`
+for a measured short transparent graphic. `motion edit --asset PATH` regenerates a new immutable
+asset; text, secondary line, template, font, dimensions, timing and palette are revisable.
+`motion verify --asset PATH` validates its source and movie inventory. `cutlist motion --cutlist
+PATH --item ID --asset PATH --start-us US --duration-us US` writes a validated cut revision.
+Use project-compatible aspect ratio, render preview and run QC. Lower-thirds need collision review
+when subtitles are present. Truncating the overlay also truncates its exit animation.
+
+Asset source text, posters and movies are content-bearing; apply privacy.md before reading them.
+The spec is editable through regeneration; movie pixels are not native text layers. Native Jianying
+mapping rejects these assets explicitly. Do not promise that new motion survives native handoff.
+See the maintained contract at docs/specs/motion-assets-v1.md.

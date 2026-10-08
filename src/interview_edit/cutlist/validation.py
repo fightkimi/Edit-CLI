@@ -23,6 +23,7 @@ from interview_edit.models.cutlist import (
 )
 from interview_edit.models.media import MediaAsset, MediaIndex
 from interview_edit.models.sync import SyncReport
+from interview_edit.motion.service import verify_motion
 from interview_edit.project.layout import canonical
 from interview_edit.proxy.service import validate_source_revision
 from interview_edit.sync.service import load_current_sync_report
@@ -471,7 +472,41 @@ def validate_cutlist(
             for overlay_position, overlay in enumerate(item.overlays):
                 overlay_path = f"{item_path}.overlays[{overlay_position}]"
                 track(overlay.overlay_id, f"{overlay_path}.overlay_id")
-                if overlay.kind is OverlayKind.BROLL:
+                if overlay.kind is OverlayKind.MOTION:
+                    try:
+                        motion_root = _resolved_asset_path(cutlist_path, overlay.motion_path or "")
+                        spec, _ = verify_motion(config, motion_root)
+                        if overlay.duration_us > spec.duration_us:
+                            _issue(
+                                issues,
+                                "motion_duration_exceeded",
+                                "Motion overlay exceeds its declared source duration.",
+                                path=overlay_path,
+                            )
+                        if profile is not None and Fraction(spec.width, spec.height) != Fraction(
+                            profile.width, profile.height
+                        ):
+                            _issue(
+                                issues,
+                                "motion_aspect_mismatch",
+                                "Motion canvas must match the render aspect ratio.",
+                                path=overlay_path,
+                            )
+                        if (
+                            spec.template == "lower_third"
+                            and cutlist.subtitle_policy.enabled
+                            and item.subtitles
+                        ):
+                            _issue(
+                                issues,
+                                "motion_caption_review",
+                                "Review lower-third/subtitle spacing in the preview.",
+                                path=overlay_path,
+                                severity="warning",
+                            )
+                    except InterviewEditError as exc:
+                        _issue(issues, exc.code, exc.message, path=overlay_path)
+                elif overlay.kind is OverlayKind.BROLL:
                     overlay_asset = assets.get(overlay.source_id or "")
                     _asset_range(
                         issues,

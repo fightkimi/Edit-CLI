@@ -43,5 +43,5 @@ preserves prior reviews and removes new staging only. HDR diagnosis is not treat
 RGB-derived thumbnail statistics are uncalibrated heuristics. Scene intent, faces/skin tone, white
 balance and exposure taste still require viewing real footage. Unknown transfer metadata is flagged.
 There is no verified HDR tonemapping, per-frame automatic grade, LUT or native Jianying color mapping.
-The existing native-client acceptance pause and QC/master/freeze gates remain in force.
+The user resumed Mac native acceptance on 2026-10-08; QC/master/freeze gates remain in force.
 New cases are included in the existing Mac/Windows CI jobs alongside Linux full-suite checks.

@@ -14,6 +14,7 @@ from interview_edit.config.loader import config_path_for, load_project_config
 from interview_edit.config.models import ProjectConfig
 from interview_edit.cutlist.editing import (
     RevisionResult,
+    attach_motion,
     check_speech,
     set_audio_policy,
     set_source_color,
@@ -36,6 +37,7 @@ from interview_edit.export.jianying_install import install_draft
 from interview_edit.export.jianying_output import check_output
 from interview_edit.ingest.service import IngestRequest, ingest_media, read_media_index
 from interview_edit.models.cutlist import CutList
+from interview_edit.models.motion import MotionSpec
 from interview_edit.models.protocol import (
     ArtifactReference,
     ErrorPayload,
@@ -43,6 +45,7 @@ from interview_edit.models.protocol import (
     WarningPayload,
 )
 from interview_edit.models.qc import QCFindingSeverity, QCPolicy
+from interview_edit.motion.service import MotionResult, build_motion, revise_motion, verify_motion
 from interview_edit.project.service import InitRequest, initialize_project
 from interview_edit.proxy.service import ProxyRequest, build_proxies
 from interview_edit.qc.service import QCRequest, run_qc
@@ -106,6 +109,10 @@ review_app = typer.Typer(
     help="Build source phrase and timeline evidence views.", no_args_is_help=True
 )
 app.add_typer(review_app, name="review")
+motion_app = typer.Typer(
+    help="Build and revise editable motion source assets.", no_args_is_help=True
+)
+app.add_typer(motion_app, name="motion")
 
 
 def _show_version(value: bool) -> None:
@@ -1137,6 +1144,237 @@ def cutlist_captions_command(
         _fail(error, command="cutlist captions", json_output=machine)
         return
     _emit_revision(result, "cutlist captions", root, machine)
+
+
+def _emit_motion(result: MotionResult, command: str, machine: bool) -> None:
+    emit(
+        JsonEnvelope(
+            ok=True,
+            command=command,
+            data={
+                "assetPath": str(result.path),
+                "assetId": result.manifest.asset_id if result.manifest else None,
+                "template": result.spec.template,
+                "frameCount": result.frame_count,
+                "durationUs": result.spec.duration_us,
+                "dryRun": result.dry_run,
+            },
+            artifacts=[]
+            if result.dry_run
+            else [ArtifactReference(kind="motion-asset", path=str(result.path))],
+            warnings=[
+                WarningPayload(
+                    code="motion_source_editability",
+                    message=(
+                        "Edit the retained source spec and generate a new asset; "
+                        "movie pixels are not native text layers."
+                    ),
+                )
+            ],
+        ),
+        json_output=machine,
+        human_lines=[f"{'Would build' if result.dry_run else 'Built'} motion: {result.path}"],
+    )
+
+
+@motion_app.command("build")
+def motion_build_command(
+    ctx: typer.Context,
+    text: Annotated[str, typer.Option("--text")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    template: Annotated[
+        Literal["callout", "lower_third", "chapter"], typer.Option("--template")
+    ] = "callout",
+    secondary: Annotated[str, typer.Option("--secondary")] = "",
+    font: Annotated[Path | None, typer.Option("--font")] = None,
+    width: Annotated[int | None, typer.Option("--width", min=320, max=3840)] = None,
+    height: Annotated[int | None, typer.Option("--height", min=180, max=3840)] = None,
+    duration_us: Annotated[
+        int, typer.Option("--duration-us", min=800_000, max=10_000_000)
+    ] = 3_000_000,
+    enter_us: Annotated[int, typer.Option("--enter-us", min=0, max=2_000_000)] = 300_000,
+    exit_us: Annotated[int, typer.Option("--exit-us", min=0, max=2_000_000)] = 250_000,
+    accent: Annotated[str, typer.Option("--accent")] = "#76A9FA",
+    foreground: Annotated[str, typer.Option("--foreground")] = "#FFFFFF",
+    background: Annotated[str, typer.Option("--background")] = "#151B24",
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Generate a transparent local motion clip with retained source parameters."""
+    from pydantic import ValidationError
+
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config = load_project_config(_selected_project(project, options.project))
+        selected_font = font or (config.fonts[0] if config.fonts else None)
+        if selected_font is None:
+            raise UsageError("motion_font_required", "Declare a project font or pass --font.")
+        spec = MotionSpec(
+            template=template,
+            text=text,
+            secondary=secondary,
+            font_path=str(selected_font),
+            width=width or config.timeline.width,
+            height=height or config.timeline.height,
+            frame_rate=config.timeline.frame_rate,
+            duration_us=duration_us,
+            enter_us=enter_us,
+            exit_us=exit_us,
+            accent=accent,
+            foreground=foreground,
+            background=background,
+        )
+        result = build_motion(
+            config,
+            spec,
+            dry_run=options.dry_run,
+            progress=None if options.quiet else _emit_progress,
+        )
+    except ValidationError:
+        _fail(
+            UsageError(
+                "motion_spec_invalid",
+                "Motion layout, timing or palette is outside supported bounds.",
+            ),
+            command="motion build",
+            json_output=machine,
+        )
+        return
+    except InterviewEditError as error:
+        _fail(error, command="motion build", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError("motion_io_failed", "Could not read or write motion resources."),
+            command="motion build",
+            json_output=machine,
+        )
+        return
+    _emit_motion(result, "motion build", machine)
+
+
+@motion_app.command("edit")
+def motion_edit_command(
+    ctx: typer.Context,
+    asset: Annotated[Path, typer.Option("--asset")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    text: Annotated[str | None, typer.Option("--text")] = None,
+    secondary: Annotated[str | None, typer.Option("--secondary")] = None,
+    template: Annotated[
+        Literal["callout", "lower_third", "chapter"] | None, typer.Option("--template")
+    ] = None,
+    duration_us: Annotated[
+        int | None, typer.Option("--duration-us", min=800_000, max=10_000_000)
+    ] = None,
+    enter_us: Annotated[int | None, typer.Option("--enter-us", min=0, max=2_000_000)] = None,
+    exit_us: Annotated[int | None, typer.Option("--exit-us", min=0, max=2_000_000)] = None,
+    accent: Annotated[str | None, typer.Option("--accent")] = None,
+    foreground: Annotated[str | None, typer.Option("--foreground")] = None,
+    background: Annotated[str | None, typer.Option("--background")] = None,
+    font: Annotated[Path | None, typer.Option("--font")] = None,
+    width: Annotated[int | None, typer.Option("--width", min=320, max=3840)] = None,
+    height: Annotated[int | None, typer.Option("--height", min=180, max=3840)] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Retain old motion assets and generate a new asset after source edits."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config = load_project_config(_selected_project(project, options.project))
+        values = {
+            key: value
+            for key, value in dict(
+                text=text,
+                secondary=secondary,
+                template=template,
+                duration_us=duration_us,
+                enter_us=enter_us,
+                exit_us=exit_us,
+                accent=accent,
+                foreground=foreground,
+                background=background,
+                font_path=str(font) if font is not None else None,
+                width=width,
+                height=height,
+            ).items()
+            if value is not None
+        }
+        result = revise_motion(
+            config,
+            asset,
+            values,
+            dry_run=options.dry_run,
+            progress=None if options.quiet else _emit_progress,
+        )
+    except InterviewEditError as error:
+        _fail(error, command="motion edit", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError("motion_io_failed", "Could not read or write motion resources."),
+            command="motion edit",
+            json_output=machine,
+        )
+        return
+    _emit_motion(result, "motion edit", machine)
+
+
+@motion_app.command("verify")
+def motion_verify_command(
+    ctx: typer.Context,
+    asset: Annotated[Path, typer.Option("--asset")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    machine = json_output or _options(ctx).json_output
+    try:
+        config = load_project_config(_selected_project(project, _options(ctx).project))
+        _, manifest = verify_motion(config, asset)
+    except InterviewEditError as error:
+        _fail(error, command="motion verify", json_output=machine)
+        return
+    emit(
+        JsonEnvelope(
+            ok=True,
+            command="motion verify",
+            data={"assetId": manifest.asset_id, "packageValidation": "passed"},
+        ),
+        json_output=machine,
+        human_lines=["Motion asset validation passed."],
+    )
+
+
+@cutlist_app.command("motion")
+def cutlist_motion_command(
+    ctx: typer.Context,
+    item: Annotated[str, typer.Option("--item")],
+    asset: Annotated[Path, typer.Option("--asset")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    cutlist: Annotated[Path | None, typer.Option("--cutlist")] = None,
+    start_us: Annotated[int, typer.Option("--start-us", min=0)] = 0,
+    duration_us: Annotated[int | None, typer.Option("--duration-us", min=1)] = None,
+    output: Annotated[Path | None, typer.Option("--output")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config, path, document, root = _editing_context(options, project, cutlist)
+        result = attach_motion(
+            config,
+            document,
+            path,
+            item_id=item,
+            asset_path=asset,
+            start_us=start_us,
+            duration_us=duration_us,
+            output=output,
+            dry_run=options.dry_run,
+        )
+    except InterviewEditError as error:
+        _fail(error, command="cutlist motion", json_output=machine)
+        return
+    _emit_revision(result, "cutlist motion", root, machine)
 
 
 @cutlist_app.command("color")

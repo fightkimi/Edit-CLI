@@ -105,6 +105,16 @@ def export_jianying(
             "jianying_cutlist_snapshot_mismatch", "Cut-list changed before export began."
         )
     document = document_snapshot
+    if any(
+        overlay.kind == "motion"
+        for act in document.acts
+        for item in act.items
+        for overlay in item.overlays
+    ):
+        raise PreflightError(
+            "jianying_motion_unsupported",
+            "Motion source assets are regenerable; native motion mapping is not yet verified.",
+        )
     if any(correction_filter(v) for v in document.color_policy.by_source.values()):
         raise PreflightError(
             "jianying_color_unsupported",

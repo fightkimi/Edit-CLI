@@ -49,6 +49,7 @@ from interview_edit.models.render import (
     RenderOutput,
     RenderRunManifest,
 )
+from interview_edit.motion.service import verify_motion
 from interview_edit.project.layout import (
     artifact_path,
     atomic_write_text,
@@ -370,6 +371,11 @@ def _item_input_fingerprints(
     if item.font_path:
         local_paths.add(_resolved_path(cutlist_path, item.font_path))
     for overlay in item.overlays:
+        if overlay.motion_path:
+            root = _resolved_path(cutlist_path, overlay.motion_path)
+            _, motion = verify_motion(config, root)
+            local_paths.add(root / "manifest.json")
+            local_paths.update(root / file.relative_path for file in motion.files)
         if overlay.image_path:
             local_paths.add(_resolved_path(cutlist_path, overlay.image_path))
         if overlay.font_path:
@@ -519,7 +525,15 @@ def _build_item(
 
         for position, overlay in enumerate(item.overlays):
             overlay_label = f"overlay{position}"
-            if overlay.kind is OverlayKind.BROLL:
+            if overlay.kind is OverlayKind.MOTION:
+                root = _resolved_path(request.cutlist_path, overlay.motion_path or "")
+                verify_motion(request.config, root)
+                input_index = _add_media_input(args, root / "render.mov", 0, overlay.duration_us)
+                filters.append(
+                    f"[{input_index}:v:0]scale={profile.width}:{profile.height},format=rgba,"
+                    f"setpts=PTS-STARTPTS+{seconds(overlay.start_us)}/TB[{overlay_label}]"
+                )
+            elif overlay.kind is OverlayKind.BROLL:
                 assert overlay.source_id is not None
                 assert overlay.source_in_us is not None
                 asset = assets[overlay.source_id]

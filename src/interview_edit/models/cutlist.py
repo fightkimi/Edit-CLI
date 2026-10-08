@@ -23,6 +23,7 @@ class OverlayKind(StrEnum):
     BROLL = "broll"
     STILL = "still"
     TITLE = "title"
+    MOTION = "motion"
 
 
 class TransitionKind(StrEnum):
@@ -68,6 +69,7 @@ class Overlay(CutListModel):
     image_path: str | None = None
     text: str | None = Field(default=None, min_length=1)
     font_path: str | None = None
+    motion_path: str | None = None
 
     @property
     def end_us(self) -> int:
@@ -92,6 +94,10 @@ class Overlay(CutListModel):
             raise ValueError("still overlay requires image_path")
         if self.kind is OverlayKind.TITLE and not self.text:
             raise ValueError("title overlay requires text")
+        if self.kind is OverlayKind.MOTION and not self.motion_path:
+            raise ValueError("motion overlay requires a generated motion asset directory")
+        if self.kind is not OverlayKind.MOTION and self.motion_path is not None:
+            raise ValueError("only motion overlays may define motion_path")
         return self
 
 

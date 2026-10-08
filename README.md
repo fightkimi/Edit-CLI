@@ -69,9 +69,15 @@ tracks, bundled originals/fonts, and a checksum inventory. Run `jianying doctor`
 `jianying install --draft PACKAGE` on the receiving computer, then open the new project in Jianying.
 Use `jianying verify` to check the input-bound package, `jianying open` to launch the client, and
 `jianying check-output` to inspect a completed native video. Optional `--resume` retains verified
-complete resource copies for retry. Native import/edit/render compatibility remains unverified;
-launching the app and checking media are separate from native acceptance.
+complete resource copies for retry. A synthetic draft was discovered by Mac Jianying 11.5.0, and
+the user confirmed it opens with independent tracks. Save/reopen and native export remain pending;
+launching the app and checking media are separate from native acceptance. Windows GUI is untested.
 See [editable Jianying handoff](docs/specs/jianying-draft-v1.md).
+
+For short animated callouts, lower-thirds and chapter cards, use `motion build`, `motion edit`,
+`motion verify` and `cutlist motion`. Each transparent movie keeps a source specification; editing
+generates a new immutable asset. See [local motion contract](docs/specs/motion-assets-v1.md).
+These graphics work in CLI previews; editable native Jianying motion mapping remains unsupported.
 
 ```bash
 interview-edit --help

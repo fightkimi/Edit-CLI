@@ -19,7 +19,7 @@ cloud renderer or media upload replaces the CLI.
 | Distracting B-roll | Does the image explain the current sentence? Is the span synchronized? | Adjust an indexed visual overlay while preserving primary audio |
 | Text collision | Longest title/caption, glyph coverage, safe area, existing image text | Revise text and timing within supported fields; use caption review |
 | Dip at a join | Adjacent transition fields and actual audio/video fades | Remove an unnecessary fade or change the cut; a fade is not an overlapping dissolve |
-| Color jump | Source camera lighting and whether the issue appears in permitted proxy evidence | Record affected ranges; LUT/color matching is not a current cut-list feature |
+| Color jump | Source camera lighting and whether the issue appears in permitted proxy evidence | Use review color and a bounded cutlist color revision; LUT/calibrated matching remains unsupported |
 
 Default preview is 1280x720 at CRF 24, made from viewing proxies; master defaults to 1920x1080
 and reads indexed originals. Treat these as repository defaults to verify, not project overrides.
@@ -60,3 +60,10 @@ judging by mean brightness alone. Neutral/low-variation graphics need no automat
 Same-take reference cameras use existing sync evidence. Grading applies before text overlays;
 verify readability, highlights and scene consistency in the resulting preview. Known HDR and native
 Jianying color mapping are explicit gaps; do not silently drop a correction during handoff.
+
+
+For short callouts, lower-thirds and chapter cards, use the CLI's `motion build` → `motion edit`
+→ `cutlist motion` workflow. It retains editable source parameters and creates immutable transparent
+movies. Review entrance/hold/exit, longest text, main-audio continuity and subtitle collision in a
+preview with QC. It does not add animated subtitles, J/L cuts or native editable motion layers.
+Jianying export rejects motion overlays explicitly until that mapping is implemented and verified.

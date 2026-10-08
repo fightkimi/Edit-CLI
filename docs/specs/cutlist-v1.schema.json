@@ -231,6 +231,18 @@
           ],
           "default": null,
           "title": "Font Path"
+        },
+        "motion_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Motion Path"
         }
       },
       "required": [
@@ -246,7 +258,8 @@
       "enum": [
         "broll",
         "still",
-        "title"
+        "title",
+        "motion"
       ],
       "title": "OverlayKind",
       "type": "string"
