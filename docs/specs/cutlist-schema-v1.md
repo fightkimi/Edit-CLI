@@ -120,6 +120,11 @@ overlays:
 image. `title` requires nonempty text and a readable local font. Exact B-roll range reuse is a
 warning so intentional reprises remain possible and auditable.
 
+`motion` requires `motion_path` pointing to a verified generated asset directory under the artifact
+root. Use `cutlist motion` to attach it to a new revision. It retains the same item-relative timing
+and non-overlap rules, must fit the motion duration and render aspect, and preserves underlying audio.
+See [motion-assets-v1.md](motion-assets-v1.md) for source regeneration and native-handoff limits.
+
 ## Subtitles
 
 ```yaml

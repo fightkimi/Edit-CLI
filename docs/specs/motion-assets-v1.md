@@ -35,7 +35,8 @@ Editing creates a new immutable directory. It never rewrites an asset referenced
 `motion_path` pointing to the package. Attachment must fit both the item and declared motion duration.
 Shortening an overlay deliberately truncates the animation; generate a shorter source for a complete
 exit. Canvas aspect must match the selected render profile. Lower-thirds with captions warn that
-spacing needs review. Overlays follow listed order before subtitles; main audio remains intact.
+spacing needs review. V1 overlays may not overlap one another. They are composited before subtitles;
+main audio remains intact.
 
 Verification checks project ownership, bounded source/control sizes, SHA-256 inventory, geometry
 and timing. Symlink traversal and paths outside the artifact root are rejected. Changed assets fail
