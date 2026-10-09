@@ -120,6 +120,11 @@ overlays:
 image. `title` requires nonempty text and a readable local font. Exact B-roll range reuse is a
 warning so intentional reprises remain possible and auditable.
 
+`motion` requires `motion_path` pointing to a verified generated asset directory under the artifact
+root. Use `cutlist motion` to attach it to a new revision. It retains the same item-relative timing
+and non-overlap rules, must fit the motion duration and render aspect, and preserves underlying audio.
+See [motion-assets-v1.md](motion-assets-v1.md) for source regeneration and native-handoff limits.
+
 ## Subtitles
 
 ```yaml
@@ -182,3 +187,18 @@ It must be split or revised before rendering; a partial raster must never replac
 
 Warnings do not block rendering. Any error returns exit code 3 before FFmpeg starts and does not
 create or replace a render output.
+
+## Audio edge smoothing (additive schema-1 policy)
+
+Optional `audio_policy: {edge_fade_us: 5000}` enables bounded audio-only edge smoothing.
+The default is 0; accepted values are strict integer microseconds from 0 to 50000. Contiguous ranges
+of the same synchronized audio source are not faded at their join. Short items cap each edge at one
+quarter of item duration; longer declared transitions remain effective. The renderer and Jianying
+serializer share the boundary plan. See [editorial review](editorial-review-v1.md).
+
+## Source color policy
+
+Optional `color_policy.by_source` maps indexed video asset IDs to bounded brightness/contrast/gamma/
+saturation values, neutral by default. Actual camera and B-roll sources receive their own settings
+before overlays/subtitles. Known HDR and unknown sources are rejected for active correction.
+See [color-quality-v1.md](color-quality-v1.md) for ranges, revision and native-export behavior.

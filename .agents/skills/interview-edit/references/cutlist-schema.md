@@ -10,7 +10,7 @@ Essential rules:
 - Use `broll`, `still`, and `title` only for their defined render semantics. The `transition` enum is reserved in V1; express a basic fade as identical `transition_out` and `transition_in` values on adjacent items.
 - Keep camera cuts, overlays, and subtitles item-relative and within the item's duration.
 - Preserve one configured primary audio source when changing displayed cameras.
-- Refer only to indexed assets and existing sync evidence.
+- Refer to indexed media and existing sync evidence. A `motion` overlay instead references a verified generated asset directory via `motion_path`; attach it with `cutlist motion`, retain non-overlap rules, and review source-regeneration/native limits in docs/specs/motion-assets-v1.md.
 - Preview from validated proxies before requesting a master. Titles and enabled subtitles require a readable declared or project-configured local font.
 - Do not hand-edit generated indexes, transcripts, run manifests, or QC reports as a substitute for correcting the true input.
 

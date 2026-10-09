@@ -35,6 +35,12 @@ interview-edit cutlist validate
 interview-edit cutlist set-range
 interview-edit cutlist captions
 interview-edit cutlist speech-check
+interview-edit cutlist motion
+
+interview-edit motion build
+interview-edit motion edit
+interview-edit motion verify
+interview-edit motion from-spec
 
 interview-edit render
 interview-edit qc
@@ -42,6 +48,10 @@ interview-edit qc
 interview-edit export jianying
 interview-edit jianying doctor
 interview-edit jianying install
+interview-edit jianying export-video
+interview-edit jianying run-export
+interview-edit jianying finish-export
+interview-edit jianying export-status
 
 interview-edit version freeze
 interview-edit version list
@@ -50,6 +60,12 @@ interview-edit version verify
 ```
 
 Every command shown above is implemented. No nonfunctional placeholder is exposed.
+
+Local motion commands and the `motion` overlay extension are specified in
+[motion-assets-v1.md](motion-assets-v1.md). Generated movies retain editable source specifications;
+default native Jianying export rejects motion until the experimental mapping is explicitly enabled.
+Opt-in native effects and export-job behavior are specified in
+[native-effects-export-jobs-v1.md](native-effects-export-jobs-v1.md); default export remains strict.
 
 ## M1 behavior
 
@@ -327,3 +343,20 @@ Experimental editable-project export and native draft-library handoff are specif
 | 4 | missing external dependency |
 | 5 | permission or path-boundary failure |
 | 130 | interrupted by user |
+
+## Editorial review and pacing
+
+`review transcript` builds a content-bearing local phrase index across verified selected sources.
+`review timeline` builds filmstrip/absolute-waveform/word evidence for one indexed source or successful
+render run at `--focus-us`. JSON output contains paths/counts/warnings, not transcript text. Both use
+new directories under `artifact_root/review`; dry-run writes nothing. Invalid/stale evidence fails
+with the existing envelope and exit codes. Audio decode failure is not reported as silence.
+
+`cutlist audio --edge-fade-us 5000` writes a new validated audio-policy revision.
+`cutlist captions` adds opt-in `--pause-us`, `--min-duration-us` and configurable `--max-cps`.
+The complete additive command and artifact contract is [editorial-review-v1.md](editorial-review-v1.md).
+
+`review color` adds bounded source sampling and original/corrected contact sheets with numeric
+statistics. `cutlist color` creates validated source-correction revisions and supports reset.
+See [color-quality-v1.md](color-quality-v1.md). Suggestions do not silently modify a cut-list;
+unsupported native color export fails explicitly rather than omitting a setting.

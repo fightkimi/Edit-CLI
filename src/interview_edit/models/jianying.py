@@ -4,6 +4,17 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from interview_edit.models.motion import MotionManifest, MotionSpec
+
+
+class DraftMotion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source_path: str
+    spec: MotionSpec
+    manifest: MotionManifest
+    resources: dict[str, str]
+    inputs: dict[str, str]
+
 
 class DraftFile(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -22,10 +33,10 @@ class DraftSource(BaseModel):
 
 class JianyingManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    schema_version: Literal["1", "2"] = "2"
-    exporter: Literal["interview-edit-jianying-v1", "interview-edit-jianying-v2"] = (
-        "interview-edit-jianying-v2"
-    )
+    schema_version: Literal["1", "2", "3"] = "2"
+    exporter: Literal[
+        "interview-edit-jianying-v1", "interview-edit-jianying-v2", "interview-edit-jianying-v3"
+    ] = "interview-edit-jianying-v2"
     export_id: str = Field(pattern=r"^[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}$")
     project_id: str
     draft_name: str
@@ -43,9 +54,15 @@ class JianyingManifest(BaseModel):
     config_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     source_assets: dict[str, DraftSource] = Field(default_factory=dict)
     material_sources: dict[str, str] = Field(default_factory=dict)
+    native_effects: bool = False
+    motion_assets: dict[str, DraftMotion] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def snapshot_required(self) -> JianyingManifest:
-        if self.schema_version == "2" and (not self.input_snapshot or not self.config_sha256):
+        if self.schema_version in {"2", "3"} and (
+            not self.input_snapshot or not self.config_sha256
+        ):
             raise ValueError("Export v2 requires an input snapshot and configuration hash.")
+        if (self.native_effects or self.motion_assets) and self.schema_version != "3":
+            raise ValueError("Native effects require export schema 3.")
         return self

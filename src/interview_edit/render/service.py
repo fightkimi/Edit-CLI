@@ -28,11 +28,14 @@ from interview_edit.adapters.render import (
 )
 from interview_edit.adapters.text import render_text_png
 from interview_edit.config.models import ProjectConfig, RenderProfile
+from interview_edit.cutlist.audio import edge_fades
+from interview_edit.cutlist.color import correction_filter
 from interview_edit.cutlist.timing import map_source_range, visual_intervals
 from interview_edit.cutlist.validation import validate_cutlist
 from interview_edit.errors import InterviewEditError, PathSafetyError, PreflightError, UsageError
 from interview_edit.ingest.service import read_media_index
 from interview_edit.models.cutlist import (
+    ColorCorrection,
     CutList,
     OverlayKind,
     TimelineItem,
@@ -46,6 +49,7 @@ from interview_edit.models.render import (
     RenderOutput,
     RenderRunManifest,
 )
+from interview_edit.motion.service import verify_motion
 from interview_edit.project.layout import (
     artifact_path,
     atomic_write_text,
@@ -288,8 +292,9 @@ def _text_raster(
     return path
 
 
-def _normal_video_filter(profile: RenderProfile) -> str:
-    return (
+def _normal_video_filter(profile: RenderProfile, correction: ColorCorrection | None = None) -> str:
+    grade = correction_filter(correction)
+    return (grade + "," if grade else "") + (
         f"scale={profile.width}:{profile.height}:force_original_aspect_ratio=decrease,"
         f"pad={profile.width}:{profile.height}:(ow-iw)/2:(oh-ih)/2:color=black,"
         f"setsar=1,fps={profile.frame_rate},format=yuv420p"
@@ -366,6 +371,11 @@ def _item_input_fingerprints(
     if item.font_path:
         local_paths.add(_resolved_path(cutlist_path, item.font_path))
     for overlay in item.overlays:
+        if overlay.motion_path:
+            root = _resolved_path(cutlist_path, overlay.motion_path)
+            _, motion = verify_motion(config, root)
+            local_paths.add(root / "manifest.json")
+            local_paths.update(root / file.relative_path for file in motion.files)
         if overlay.image_path:
             local_paths.add(_resolved_path(cutlist_path, overlay.image_path))
         if overlay.font_path:
@@ -430,15 +440,16 @@ def _build_item(
     cache_key: str,
     runner: ProcessRunner,
     command_log: _CommandLog,
+    audio_edges: tuple[int, int] = (0, 0),
 ) -> RenderItemManifest:
     assets = {asset.asset_id: asset for asset in index.assets}
     source = assets.get(item.source_id or "")
     cache_root = artifact_path(request.config.artifact_root, "renders", "cache", "items")
-    output = cache_root / f"{cache_key}.mp4"
+    output = cache_root / f"{cache_key}.mov"
     manifest_path = cache_root / f"{cache_key}.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
-        prefix=f".{item.item_id}.", suffix=".mp4", dir=cache_root, delete=False
+        prefix=f".{item.item_id}.", suffix=".mov", dir=cache_root, delete=False
     ) as handle:
         temporary = Path(handle.name)
     local_commands_start = len(command_log.commands)
@@ -457,9 +468,12 @@ def _build_item(
                 )
                 label = f"base{position}"
                 ratio = Fraction(interval.duration_us, interval.source_duration_us)
+                normal = _normal_video_filter(
+                    profile, request.cutlist.color_policy.by_source.get(interval.asset.asset_id)
+                )
                 filters.append(
                     f"[{input_index}:v:0]setpts=(PTS-STARTPTS)*{float(ratio):.12f},"
-                    f"{_normal_video_filter(profile)},trim=duration={seconds(interval.duration_us)},"
+                    f"{normal},trim=duration={seconds(interval.duration_us)},"
                     f"setpts=PTS-STARTPTS[{label}]"
                 )
                 video_labels.append(label)
@@ -511,7 +525,15 @@ def _build_item(
 
         for position, overlay in enumerate(item.overlays):
             overlay_label = f"overlay{position}"
-            if overlay.kind is OverlayKind.BROLL:
+            if overlay.kind is OverlayKind.MOTION:
+                root = _resolved_path(request.cutlist_path, overlay.motion_path or "")
+                verify_motion(request.config, root)
+                input_index = _add_media_input(args, root / "render.mov", 0, overlay.duration_us)
+                filters.append(
+                    f"[{input_index}:v:0]scale={profile.width}:{profile.height},format=rgba,"
+                    f"setpts=PTS-STARTPTS+{seconds(overlay.start_us)}/TB[{overlay_label}]"
+                )
+            elif overlay.kind is OverlayKind.BROLL:
                 assert overlay.source_id is not None
                 assert overlay.source_in_us is not None
                 asset = assets[overlay.source_id]
@@ -519,8 +541,11 @@ def _build_item(
                 input_index = _add_media_input(
                     args, path, overlay.source_in_us, overlay.duration_us
                 )
+                normal = _normal_video_filter(
+                    profile, request.cutlist.color_policy.by_source.get(asset.asset_id)
+                )
                 filters.append(
-                    f"[{input_index}:v:0]{_normal_video_filter(profile)},"
+                    f"[{input_index}:v:0]{normal},"
                     f"trim=duration={seconds(overlay.duration_us)},"
                     f"setpts=PTS-STARTPTS+{seconds(overlay.start_us)}/TB[{overlay_label}]"
                 )
@@ -648,13 +673,15 @@ def _build_item(
             filters.append(f"[{audio_input}:a:0]asetpts=PTS-STARTPTS[abase]")
 
         audio_filters: list[str] = []
-        if item.transition_in is not None:
-            audio_filters.append(f"afade=t=in:st=0:d={seconds(item.transition_in.duration_us)}")
-        if item.transition_out is not None:
-            start = item.timeline_duration_us - item.transition_out.duration_us
-            audio_filters.append(
-                f"afade=t=out:st={seconds(start)}:d={seconds(item.transition_out.duration_us)}"
-            )
+        fade_in = max(audio_edges[0], item.transition_in.duration_us if item.transition_in else 0)
+        fade_out = max(
+            audio_edges[1], item.transition_out.duration_us if item.transition_out else 0
+        )
+        if fade_in:
+            audio_filters.append(f"afade=t=in:st=0:d={seconds(fade_in)}")
+        if fade_out:
+            start = item.timeline_duration_us - fade_out
+            audio_filters.append(f"afade=t=out:st={seconds(start)}:d={seconds(fade_out)}")
         if audio_filters:
             filters.append(f"[abase]{','.join(audio_filters)}[afinal]")
         else:
@@ -674,7 +701,7 @@ def _build_item(
                 "-pix_fmt",
                 "yuv420p",
                 "-c:a",
-                profile.audio_codec,
+                "pcm_s16le",
                 "-ar",
                 str(profile.audio_sample_rate),
                 "-ac",
@@ -873,7 +900,13 @@ def render_cutlist(
     assembled: Path | None = None
     try:
         item_outputs: list[Path] = []
-        for selected_item in selected:
+        fades = edge_fades(
+            request.config,
+            index,
+            [entry.item for entry in selected],
+            request.cutlist.audio_policy.edge_fade_us,
+        )
+        for selected_item, audio_edges in zip(selected, fades, strict=True):
             item = selected_item.item
             if progress is not None:
                 progress(f"Preparing item {item.item_id}")
@@ -886,11 +919,24 @@ def render_cutlist(
                 assets=assets,
                 profile_name=profile_name,
             )
+            visual_ids = {overlay.source_id for overlay in item.overlays if overlay.source_id}
+            if source is not None:
+                visual_ids.update(
+                    interval.asset.asset_id
+                    for interval in visual_intervals(request.config, index, item, source, assets)
+                )
+            source_colors = {
+                aid: grade.model_dump(mode="json")
+                for aid, grade in request.cutlist.color_policy.by_source.items()
+                if aid in visual_ids and correction_filter(grade)
+            }
             cache_key = _canonical_hash(
                 {
-                    "schema": "render-item-v2",
+                    "schema": "render-item-v3-pcm-audio",
                     "item": item.model_dump(mode="json"),
                     "subtitlePolicy": request.cutlist.subtitle_policy.model_dump(mode="json"),
+                    "audioEdges": audio_edges,
+                    **({"sourceColors": source_colors} if source_colors else {}),
                     "profile": profile.model_dump(mode="json"),
                     "encoder": encoder,
                     "inputs": item_fingerprints,
@@ -911,6 +957,7 @@ def render_cutlist(
                     cache_key=cache_key,
                     runner=active_runner,
                     command_log=command_log,
+                    audio_edges=audio_edges,
                 )
                 state: Literal["built", "cached"] = "built"
             else:
@@ -939,7 +986,7 @@ def render_cutlist(
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
             prefix=f".{output_path.stem}.",
-            suffix=".assembled.mp4",
+            suffix=".assembled.mov",
             dir=output_path.parent,
             delete=False,
         ) as handle:
@@ -1038,8 +1085,35 @@ def render_cutlist(
                 purpose="normalize master loudness",
             )
         else:
-            os.replace(assembled, candidate)
-            assembled = None
+            # Encode audio once after concat; independent AAC priming/padding would insert gaps.
+            command_log.run(
+                [
+                    "-nostdin",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-i",
+                    str(assembled),
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "0:a:0",
+                    "-c:v",
+                    "copy",
+                    "-c:a",
+                    profile.audio_codec,
+                    "-ar",
+                    str(profile.audio_sample_rate),
+                    "-ac",
+                    str(profile.audio_channels),
+                    "-movflags",
+                    "+faststart",
+                    "-y",
+                    str(candidate),
+                ],
+                active_runner,
+                purpose="encode final preview audio",
+            )
 
         for key in input_fingerprints:
             if key.startswith("source:"):

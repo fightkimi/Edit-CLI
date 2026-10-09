@@ -36,6 +36,20 @@
       "title": "Act",
       "type": "object"
     },
+    "AudioPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "edge_fade_us": {
+          "default": 0,
+          "maximum": 50000,
+          "minimum": 0,
+          "title": "Edge Fade Us",
+          "type": "integer"
+        }
+      },
+      "title": "AudioPolicy",
+      "type": "object"
+    },
     "CameraCut": {
       "additionalProperties": false,
       "properties": {
@@ -68,6 +82,57 @@
         "duration_us"
       ],
       "title": "CameraCut",
+      "type": "object"
+    },
+    "ColorCorrection": {
+      "additionalProperties": false,
+      "properties": {
+        "brightness": {
+          "default": 0,
+          "maximum": 0.15,
+          "minimum": -0.15,
+          "title": "Brightness",
+          "type": "number"
+        },
+        "contrast": {
+          "default": 1,
+          "maximum": 1.25,
+          "minimum": 0.75,
+          "title": "Contrast",
+          "type": "number"
+        },
+        "gamma": {
+          "default": 1,
+          "maximum": 1.25,
+          "minimum": 0.75,
+          "title": "Gamma",
+          "type": "number"
+        },
+        "saturation": {
+          "default": 1,
+          "maximum": 1.5,
+          "minimum": 0,
+          "title": "Saturation",
+          "type": "number"
+        }
+      },
+      "title": "ColorCorrection",
+      "type": "object"
+    },
+    "ColorPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "by_source": {
+          "patternProperties": {
+            "^asset_[a-f0-9]{24}$": {
+              "$ref": "#/$defs/ColorCorrection"
+            }
+          },
+          "title": "By Source",
+          "type": "object"
+        }
+      },
+      "title": "ColorPolicy",
       "type": "object"
     },
     "Overlay": {
@@ -166,6 +231,18 @@
           ],
           "default": null,
           "title": "Font Path"
+        },
+        "motion_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Motion Path"
         }
       },
       "required": [
@@ -181,7 +258,8 @@
       "enum": [
         "broll",
         "still",
-        "title"
+        "title",
+        "motion"
       ],
       "title": "OverlayKind",
       "type": "string"
@@ -550,6 +628,12 @@
     },
     "subtitle_policy": {
       "$ref": "#/$defs/SubtitlePolicy"
+    },
+    "audio_policy": {
+      "$ref": "#/$defs/AudioPolicy"
+    },
+    "color_policy": {
+      "$ref": "#/$defs/ColorPolicy"
     },
     "render_profile": {
       "default": "preview",

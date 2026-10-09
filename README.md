@@ -69,9 +69,22 @@ tracks, bundled originals/fonts, and a checksum inventory. Run `jianying doctor`
 `jianying install --draft PACKAGE` on the receiving computer, then open the new project in Jianying.
 Use `jianying verify` to check the input-bound package, `jianying open` to launch the client, and
 `jianying check-output` to inspect a completed native video. Optional `--resume` retains verified
-complete resource copies for retry. Native import/edit/render compatibility remains unverified;
-launching the app and checking media are separate from native acceptance.
+complete resource copies for retry. A synthetic draft was discovered by Mac Jianying 11.5.0, and
+the user confirmed it opens with independent tracks. Save/reopen and native export remain pending;
+launching the app and checking media are separate from native acceptance. Windows GUI is untested.
 See [editable Jianying handoff](docs/specs/jianying-draft-v1.md).
+
+For short animated callouts, lower-thirds and chapter cards, use `motion build`, `motion edit`,
+`motion verify` and `cutlist motion`. Each transparent movie keeps a source specification; editing
+generates a new immutable asset. See [local motion contract](docs/specs/motion-assets-v1.md).
+These graphics work in CLI previews. Opt-in `export jianying --native-effects` puts the verified MOV
+on its own native track and bundles source/font for `motion from-spec` regeneration. Movie pixels
+remain different from native editable text. The same opt-in maps brightness/contrast/saturation;
+gamma remains unsupported and native appearance is unverified.
+`jianying export-video` creates a durable job; `finish-export` checks and publishes a selected native
+MP4. Optional Windows 5.x/6.x automation uses `run-export --approve` and the `native-windows` extra.
+Modern Mac/Windows clients use the manual completion path. See
+[native effects/export jobs](docs/specs/native-effects-export-jobs-v1.md).
 
 ```bash
 interview-edit --help
@@ -139,3 +152,25 @@ uv run pytest
 ```
 
 See the [V1 product requirements](docs/prds/interview-edit-cli-skill-v1.md), [project configuration](docs/specs/project-config-v1.md), [CLI contract](docs/specs/cli-contract-v1.md), [cut-list contract](docs/specs/cutlist-schema-v1.md), [operation-run protocol](docs/specs/operation-run-v1.md), [render-run protocol](docs/specs/render-run-v1.md), [QC report protocol](docs/specs/qc-report-v1.md), [frozen-version protocol](docs/specs/version-manifest-v1.md), [media-index protocol](docs/specs/media-index-v1.md), [transcript/sync protocol](docs/specs/transcript-and-sync-v1.md), [M6 plan](docs/plans/m6-skill-and-beta-acceptance.md), [M7 synthetic-matrix plan](docs/plans/m7-synthetic-creator-matrix-and-intake.md), [M7 acceptance evidence](docs/tests/m7-synthetic-creator-matrix.md), [real-media Beta intake checklist](docs/tests/real-media-beta-checklist.md), [V1 release-readiness evidence](docs/tests/v1-release-readiness.md), [Skill benchmark](docs/research/2026-09-04-interview-edit-skill-benchmark.md), [Skill orchestration ADR](docs/decisions/0008-state-aware-skill-orchestration.md), and [artifact/evidence hardening ADR](docs/decisions/0009-artifact-boundaries-and-evidence-freshness.md).
+
+## Editorial evidence and pacing
+
+Use `review transcript --project PROJECT` to produce a source-linked phrase reading view across
+completed transcripts. `review timeline --project PROJECT --run RENDER_ID --focus-us 800000`
+creates a cut-window filmstrip with actual frame times, absolute audio waveform and source-mapped
+words; `--asset ASSET_ID` reviews source proxies. Its JSON output omits recognized text. Review
+files contain content, so observe the project's privacy mode before exposing them to an agent.
+
+For a new pacing revision, use `cutlist audio --edge-fade-us 5000` to smooth discontinuous audio
+edges, and `cutlist captions --pause-us 300000 --min-duration-us 350000 --max-cps 20` to improve
+caption display timing. Supply `--project` and `--cutlist`; then validate/render the returned revision.
+Contiguous source audio is preserved, unresolved timing constraints remain warnings, and actual
+picture/sound quality still requires review. See [editorial review contract](docs/specs/editorial-review-v1.md).
+
+For SDR picture correction, `review color --project PROJECT --asset ID` creates a bounded proposal
+with original/after images and pixel statistics. Use `--cutlist REVISION` to inspect configured
+correction, or `--reference ID` for a confirmed synchronized camera. Apply chosen settings with
+`cutlist color --project PROJECT --cutlist REVISION --asset ID --brightness 0.03 --gamma 1.05`.
+The returned revision applies source-specific settings before captions and B-roll composition;
+`--reset` removes them. Proposals need visual review, and known HDR/native color mapping are outside
+this verified path. See the [color contract](docs/specs/color-quality-v1.md).

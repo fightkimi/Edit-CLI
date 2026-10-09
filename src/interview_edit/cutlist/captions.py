@@ -39,12 +39,18 @@ def split_subtitle(
     max_chars: int = 18,
     words: list[TranscriptWord] | None = None,
     source_in_us: int = 0,
+    pause_us: int = 0,
+    min_duration_us: int = 0,
 ) -> tuple[list[Subtitle], bool]:
     """Preserve edited text; only use ASR times when the entire text agrees."""
     text = " ".join(subtitle.text.split())
     if not text:
         raise PreflightError("caption_text_empty", "A subtitle contains only whitespace.")
     chunks = _chunks(text, max_chars)
+    if not 0 <= pause_us <= 5_000_000 or not 0 <= min_duration_us <= 5_000_000:
+        raise UsageError(
+            "caption_pacing_invalid", "Caption pacing values must be 0–5000000 microseconds."
+        )
     selected = [
         word
         for word in (words or [])
@@ -59,6 +65,27 @@ def split_subtitle(
     )
     spans: list[tuple[str, int, int]] = []
     if aligned:
+        if pause_us:
+            # Split the proposed text chunks at measured pauses, preserving every character.
+            pauses = set()
+            cursor = 0
+            for position, word in enumerate(selected[:-1]):
+                cursor += len(compact(word.text))
+                if selected[position + 1].start_us - word.end_us >= pause_us:
+                    pauses.add(cursor)
+            refined: list[str] = []
+            cursor = 0
+            for chunk in chunks:
+                part = ""
+                for char in chunk:
+                    part += char
+                    cursor += bool(compact(char))
+                    if cursor in pauses and compact(char):
+                        refined.append(part)
+                        part = ""
+                if part:
+                    refined.append(part)
+            chunks = refined
         # Merge proposed chunks until their boundary coincides with a whole word.
         ends: dict[int, int] = {}
         length = 0
@@ -93,6 +120,26 @@ def split_subtitle(
             spans.append((chunk, start, end))
     if any(end <= start for _, start, end in spans):
         raise PreflightError("caption_duration_too_short", "Not enough cue time for this split.")
+    if min_duration_us:
+        merged: list[tuple[str, int, int]] = []
+        for value, start, end in spans:
+            if merged:
+                previous, begin, finish = merged[-1]
+                short = finish - begin < min_duration_us or end - start < min_duration_us
+                if (
+                    short
+                    and len(previous + value) <= max_chars
+                    and start - finish < (pause_us or 300_000)
+                ):
+                    merged[-1] = (previous + value, begin, end)
+                    continue
+            merged.append((value, start, end))
+        spans = []
+        for position, (value, start, end) in enumerate(merged):
+            limit = merged[position + 1][1] if position + 1 < len(merged) else subtitle.end_us
+            if position + 1 < len(merged) and pause_us and limit - end >= pause_us:
+                limit -= pause_us
+            spans.append((value, start, min(limit, max(end, start + min_duration_us))))
     return [
         Subtitle(
             subtitle_id=subtitle.subtitle_id

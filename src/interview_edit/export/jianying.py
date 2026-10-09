@@ -18,6 +18,7 @@ from interview_edit.adapters.filesystem import quick_fingerprint, sha256_file
 from interview_edit.adapters.jianying import DRAFT_PATH, DraftBuilder, Target, template
 from interview_edit.adapters.verified_copy import copy_verified
 from interview_edit.config.models import ProjectConfig
+from interview_edit.cutlist.color import correction_filter
 from interview_edit.cutlist.service import parse_cutlist
 from interview_edit.cutlist.validation import validate_cutlist
 from interview_edit.errors import PathSafetyError, PreflightError, UsageError
@@ -91,6 +92,7 @@ def export_jianying(
     name: str,
     target: Target = "both",
     bundle_media: bool = True,
+    native_effects: bool = False,
     dry_run: bool = False,
     resume: bool = False,
     progress: Callable[[str], None] | None = None,
@@ -104,6 +106,33 @@ def export_jianying(
             "jianying_cutlist_snapshot_mismatch", "Cut-list changed before export began."
         )
     document = document_snapshot
+    if not native_effects and any(
+        overlay.kind == "motion"
+        for act in document.acts
+        for item in act.items
+        for overlay in item.overlays
+    ):
+        raise PreflightError(
+            "jianying_motion_unsupported",
+            "Motion source assets are regenerable; native motion mapping is not yet verified.",
+        )
+    if not native_effects and any(
+        correction_filter(v) for v in document.color_policy.by_source.values()
+    ):
+        raise PreflightError(
+            "jianying_color_unsupported",
+            "Native color mapping is unverified; reset source corrections before editable export.",
+        )
+    if native_effects and not bundle_media:
+        raise PreflightError(
+            "jianying_effects_bundle_required",
+            "Experimental effects need a portable bundled package.",
+        )
+    if native_effects and any(v.gamma != 1 for v in document.color_policy.by_source.values()):
+        raise PreflightError(
+            "jianying_gamma_unsupported",
+            "Native gamma has no verified field mapping; retain or revise the CLI cut.",
+        )
     cutlist_hash = hashlib.sha256(snapshot).hexdigest()
     report = validate_cutlist(config, document, cutlist_path=cutlist_path, profile_name="master")
     if not report.ok:
@@ -127,7 +156,7 @@ def export_jianying(
             control_paths.append(report_path)
     control_hashes = {str(p): sha256_file(p) for p in control_paths}
     control_hashes[str(index_path)] = hashlib.sha256(index_snapshot).hexdigest()
-    builder = DraftBuilder(config, document, cutlist_path, index, bundle_media)
+    builder = DraftBuilder(config, document, cutlist_path, index, bundle_media, native_effects)
     draft, records = builder.build()
     export_id = draft["id"]
     destination = artifact_path(config.artifact_root, "exports", f"{name}-{export_id}")
@@ -223,6 +252,14 @@ def export_jianying(
         )
         if not bundle_media:
             instructions += "\n本包引用本机原素材，移动到另一台电脑可能需要手动重新链接。\n"
+        if native_effects:
+            instructions += (
+                "\n本包启用了实验性原生效果。亮度、对比度和饱和度写入原生关键帧，"
+                "与 CLI 的像素结果不保证完全相同；gamma 不支持。\n"
+                "动效是独立的透明视频轨道，可调整位置和时长。动效内文字已成为像素，"
+                "不能作为剪映原生文字直接修改；普通标题和字幕仍是原生文字。"
+                "随附源参数和字体可用 motion from-spec 重新生成，再用 motion edit 修改。\n"
+            )
         atomic_write_text(staging / "打开草稿说明.md", instructions)
         files = [
             DraftFile(
@@ -247,6 +284,12 @@ def export_jianying(
             ).encode()
         ).hexdigest()
         manifest = JianyingManifest(
+            schema_version="3" if native_effects else "2",
+            exporter="interview-edit-jianying-v3"
+            if native_effects
+            else "interview-edit-jianying-v2",
+            native_effects=native_effects,
+            motion_assets=builder.motion_assets,
             export_id=export_id,
             project_id=config.project_id,
             draft_name=name,
@@ -262,13 +305,24 @@ def export_jianying(
             config_sha256=config_hash,
             control_fingerprints=control_hashes,
             source_assets={
-                a.asset_id: DraftSource(
-                    source_path=a.canonical_path,
-                    resource_path=resources[canonical(Path(a.canonical_path))],
-                    duration_us=a.duration_us,
-                    sha256=source_hashes[str(canonical(Path(a.canonical_path)))],
-                )
-                for a in used_assets
+                **{
+                    a.asset_id: DraftSource(
+                        source_path=a.canonical_path,
+                        resource_path=resources[canonical(Path(a.canonical_path))],
+                        duration_us=a.duration_us,
+                        sha256=source_hashes[str(canonical(Path(a.canonical_path)))],
+                    )
+                    for a in used_assets
+                },
+                **{
+                    aid: DraftSource(
+                        source_path=str(Path(m.source_path) / "render.mov"),
+                        resource_path=m.resources["render.mov"],
+                        duration_us=m.manifest.duration_us,
+                        sha256=source_hashes[str(Path(m.source_path) / "render.mov")],
+                    )
+                    for aid, m in builder.motion_assets.items()
+                },
             },
             material_sources={
                 identifier: asset_id for (asset_id, _), identifier in builder.media_ids.items()
@@ -311,7 +365,7 @@ def _verify_draft(path: Path, *, native_root: Path | None = None) -> JianyingMan
             "jianying_manifest_invalid", "Draft export manifest is missing or invalid."
         ) from exc
     expected = set()
-    if manifest.schema_version != "2":
+    if manifest.schema_version not in {"2", "3"}:
         raise PreflightError(
             "jianying_reexport_required",
             "Re-export this legacy experimental package with input snapshots.",
@@ -375,7 +429,7 @@ def _verify_draft(path: Path, *, native_root: Path | None = None) -> JianyingMan
                 "jianying_package_incomplete", "Native draft entry or metadata is missing."
             )
         content = json.loads((root / filename).read_text(encoding="utf-8"))
-        validate_native(content, meta, manifest, source_document)
+        validate_native(content, meta, manifest, source_document, package_root=root)
         timeline = (
             content["tracks"],
             content["materials"],

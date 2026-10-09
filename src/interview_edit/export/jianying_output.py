@@ -30,6 +30,8 @@ class OutputCheck(BaseModel):
     height: int
     audio_streams: int
     decode_checked: bool
+    frame_rate: str | None = None
+    expected_frame_rate: str | None = None
     output_check: Literal["passed"] = "passed"
     native_validation: Literal["not_run"] = "not_run"
 
@@ -39,6 +41,7 @@ def check_output(
     video: Path,
     *,
     expected_duration_us: int | None = None,
+    expected_frame_rate: str | None = None,
     runner: ProcessRunner | None = None,
 ) -> OutputCheck:
     manifest = verify_draft(package)
@@ -63,6 +66,20 @@ def check_output(
             "jianying_output_dimensions", "Output video dimensions differ from the draft canvas."
         )
     tolerance = math.ceil(Fraction(1_000_000, 1) / Fraction(snapshot.timeline.frame_rate))
+    measured_rate = stream.average_frame_rate or stream.real_frame_rate
+    if expected_frame_rate is not None:
+        try:
+            expected_rate = Fraction(expected_frame_rate)
+            actual_rate = Fraction(measured_rate or "0/1")
+            matches = expected_rate > 0 and math.isclose(
+                float(actual_rate), float(expected_rate), rel_tol=0.0001
+            )
+        except (ValueError, ZeroDivisionError):
+            matches = False
+        if not matches:
+            raise PreflightError(
+                "jianying_output_frame_rate", "Output frame rate differs from the requested export."
+            )
     if abs(metadata.duration_us - expected) > tolerance:
         raise PreflightError(
             "jianying_output_duration",
@@ -125,4 +142,6 @@ def check_output(
         height=snapshot.timeline.height,
         audio_streams=len(metadata.audio_streams),
         decode_checked=True,
+        frame_rate=measured_rate,
+        expected_frame_rate=expected_frame_rate,
     )

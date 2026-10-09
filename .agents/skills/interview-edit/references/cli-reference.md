@@ -119,3 +119,68 @@ interview-edit jianying install --draft PACKAGE [--draft-root EXISTING_DIRECTORY
 Use this route when the user needs a native editable timeline. Default export bundles original media
 and fonts and writes both platform entry files; show the --dry-run size for large source sets.
 Follow jianying-handoff.md. Neither file creation nor installation proves the client accepted it.
+
+
+## Editorial evidence and pacing
+
+- `interview-edit review transcript --project PATH [--asset ID ...] --json` writes source-linked phrase JSON/Markdown
+  from verified corrected transcripts. Missing word/speaker/event evidence remains explicit.
+- `interview-edit review timeline --project PATH (--asset ID | --run RENDER_ID) --focus-us US --json` writes a
+  filmstrip, absolute PCM waveform, source-mapped word report and listenable WAV. Source and output
+  clocks differ; use the report mappings. Images/words/audio contain content: apply privacy.md
+  before loading them into the agent. The envelope never contains transcript text.
+- `interview-edit cutlist audio --project PATH --cutlist PATH --edge-fade-us 5000 --json` writes a validated revision
+  with bounded smoothing at discontinuous audio edges. Contiguous source audio/camera changes are
+  preserved. Render and native draft serialization share this policy.
+- Caption pacing: `cutlist captions ... --pause-us 300000 --min-duration-us 350000 --max-cps 20`.
+  Bounds/pauses can make the minimum impossible; report warnings and review, never force success.
+
+New review artifacts are evidence, not QC/native/listening acceptance. Dry-run creates no files.
+
+
+## SDR color diagnosis and correction
+
+`interview-edit review color --project PATH --asset ID [--in-us US] [--out-us US]
+[--samples 4] [--reference ID] [--cutlist REVISION] --json` produces original/after contact sheets,
+source-mapped frame evidence and numeric pixel statistics. Reference cameras require confirmed
+same-take sync. No cut-list means proposed settings; a supplied cut-list means configured settings.
+
+`interview-edit cutlist color --project PATH --cutlist PATH --asset ID --brightness 0.03 --gamma 1.05
+--json` creates a new validated revision. Omitted parameters preserve prior values; `--reset` removes
+that source's correction. Preview the returned revision and compare the scene intent. Corrections
+are finite/bounded and apply to actual camera/B-roll sources before text composition. They are not
+calibrated exposure/white balance. Known HDR is unsupported; unknown transfer is marked explicitly.
+
+Active CLI color policy has no verified native Jianying mapping. Default editable export fails explicitly;
+reset in a new revision for an original-based native handoff. Do not claim color parameters were
+preserved or infer native acceptance from preview evidence.
+
+
+## Local motion graphics
+
+Use `motion build --project PATH --template callout|lower_third|chapter --text TEXT --font FONT`
+for a measured short transparent graphic. `motion edit --asset PATH` regenerates a new immutable
+asset; text, secondary line, template, font, dimensions, timing and palette are revisable.
+`motion verify --asset PATH` validates its source and movie inventory. `cutlist motion --cutlist
+PATH --item ID --asset PATH --start-us US --duration-us US` writes a validated cut revision.
+Use project-compatible aspect ratio, render preview and run QC. Lower-thirds need collision review
+when subtitles are present. Truncating the overlay also truncates its exit animation.
+
+Asset source text, posters and movies are content-bearing; apply privacy.md before reading them.
+The spec is editable through regeneration; movie pixels are not native text layers. Native Jianying
+mapping rejects these assets explicitly. Do not promise that new motion survives native handoff.
+See the maintained contract at docs/specs/motion-assets-v1.md.
+
+
+## Native effects and export jobs
+
+`export jianying --native-effects` opts into schema-3 mappings for brightness/contrast/saturation
+and independent motion MOV tracks. Gamma is unsupported; motion text requires source regeneration
+and is not a native text layer. `motion from-spec --spec FILE --font FONT` creates a new project
+asset from retained source parameters.
+
+`jianying export-video --draft PACKAGE` creates a planned manual job. `finish-export --job ID
+--video FILE` verifies/publishes actual completed media; `export-status --job ID` checks its binding
+and receipt. Optional `--backend windows-legacy` needs Windows 5.x/6.x and the native-windows extra;
+`run-export --job ID --approve` requests bounded GUI export. Modern clients have no automatic backend.
+Read jianying-handoff.md and docs/specs/native-effects-export-jobs-v1.md before orchestration.

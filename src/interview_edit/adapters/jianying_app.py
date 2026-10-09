@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any, Literal
 
+from interview_edit.adapters.native_capabilities import export_backends
 from interview_edit.adapters.process import SubprocessRunner
 from interview_edit.errors import DependencyError, ProcessingError
 
@@ -57,7 +58,7 @@ def inspect_jianying(*, draft_root: Path | None = None) -> dict[str, Any]:
             version = windows_file_version(app)
     if override:
         draft_root = Path(override).expanduser().resolve()
-    return {
+    result: dict[str, Any] = {
         "platform": selected,
         "appPath": str(app) if app else None,
         "appVersion": version,
@@ -69,6 +70,9 @@ def inspect_jianying(*, draft_root: Path | None = None) -> dict[str, Any]:
         "draftRootSource": "explicit" if override else "default",
         "automatedExport": False,
     }
+    result["exportBackends"] = export_backends(result)
+    result["automatedExport"] = result["exportBackends"]["windows-legacy"]["available"]
+    return result
 
 
 def windows_file_version(path: Path) -> str | None:

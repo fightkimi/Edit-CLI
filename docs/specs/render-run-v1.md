@@ -84,3 +84,13 @@ Each normalized item output has a sibling JSON manifest under
 
 A hit requires key equality plus matching output path, size, and SHA-256. File existence alone is
 never sufficient.
+
+## PCM item audio and final encoding
+
+Item caches now use MOV with the configured video encoder and 16-bit PCM audio. The cache key schema
+is `render-item-v3-pcm-audio` and includes effective audio-edge fades. Old AAC item caches remain
+untouched but are not reused by new renders. This avoids independent encoder priming/padding at
+joins. Assembly copies both streams; final preview copies video and encodes audio once using the
+configured output codec. Master retains measured two-pass loudness and final audio encoding.
+Public outputs and run/item manifest schema remain unchanged; cache paths are opaque, not fixed
+MP4 names. PCM caches consume more audio storage than AAC, at the configured sample rate/channels.

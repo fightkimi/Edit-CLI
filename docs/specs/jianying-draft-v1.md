@@ -2,7 +2,9 @@
 
 Status: experimental native protocol. Export and installation target both macOS and Windows.
 No Jianying app/version is certified by this project yet. This document supersedes the initial
-v1 manifest contract; newly generated packages use manifest schema **2**.
+v1 manifest contract; strict packages use schema **2**, opt-in `--native-effects` packages use **3**.
+See [native effects and export jobs](native-effects-export-jobs-v1.md) for the schema extension,
+portable motion sources and the bounded optional Windows legacy export backend.
 
 ## User workflow
 
@@ -136,3 +138,11 @@ The eight reviewed JSON templates retain the recorded MIT licensing decision: `d
 See [first-principles audit](../research/2026-09-08-jianying-first-principles-audit.md) for upstream
 version/automation limitations and [acceptance record](../tests/jianying-editable-handoff.md) for
 this project's actual evidence. No upstream executable or new dependency is used by this adapter.
+
+Audio edge smoothing from `cutlist.audio_policy` is now exported as native volume keyframes. The
+same audio-range continuity calculation is shared with FFmpeg rendering, so contiguous primary audio
+is preserved across visual edits. This adds structural coverage, not a new native compatibility claim.
+
+A non-neutral `color_policy` now blocks editable export with `jianying_color_unsupported`.
+There is no verified native mapping for CLI source color parameters. Explicitly reset it in a new
+revision for an original-based handoff; native color acceptance remains paused/unverified.

@@ -35,6 +35,7 @@ Load only the references needed for the selected route:
 | improve script, pacing, captions, audio or visual quality | [quality-skills.md](references/quality-skills.md) |
 | create/revise narrative or adapt creator format | [editorial-guidance.md](references/editorial-guidance.md), [cutlist-schema.md](references/cutlist-schema.md) |
 | inspect transcript, thumbnail, contact sheet, or QC frame | [privacy.md](references/privacy.md) |
+| create/revise a short callout, lower-third or chapter motion graphic | [cli-reference.md](references/cli-reference.md), [cutlist-schema.md](references/cutlist-schema.md) |
 | keep editing in Jianying on Mac/Windows | [jianying-handoff.md](references/jianying-handoff.md) |
 | render, review, approve, recover, or resume | [review-and-recovery.md](references/review-and-recovery.md) |
 | release QC or freeze | [qc-policy.md](references/qc-policy.md), [review-and-recovery.md](references/review-and-recovery.md) |

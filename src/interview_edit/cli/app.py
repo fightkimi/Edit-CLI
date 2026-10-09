@@ -14,7 +14,10 @@ from interview_edit.config.loader import config_path_for, load_project_config
 from interview_edit.config.models import ProjectConfig
 from interview_edit.cutlist.editing import (
     RevisionResult,
+    attach_motion,
     check_speech,
+    set_audio_policy,
+    set_source_color,
     set_source_range,
     split_captions,
 )
@@ -32,8 +35,11 @@ from interview_edit.exit_codes import ExitCode
 from interview_edit.export.jianying import export_jianying, verify_draft
 from interview_edit.export.jianying_install import install_draft
 from interview_edit.export.jianying_output import check_output
+from interview_edit.export.native_jobs import create_job, finish_job, load_job, run_legacy_job
 from interview_edit.ingest.service import IngestRequest, ingest_media, read_media_index
 from interview_edit.models.cutlist import CutList
+from interview_edit.models.motion import MotionSpec
+from interview_edit.models.native_export import NativeExportJob
 from interview_edit.models.protocol import (
     ArtifactReference,
     ErrorPayload,
@@ -41,10 +47,19 @@ from interview_edit.models.protocol import (
     WarningPayload,
 )
 from interview_edit.models.qc import QCFindingSeverity, QCPolicy
+from interview_edit.motion.service import (
+    MotionResult,
+    build_motion,
+    import_motion_spec,
+    revise_motion,
+    verify_motion,
+)
 from interview_edit.project.service import InitRequest, initialize_project
 from interview_edit.proxy.service import ProxyRequest, build_proxies
 from interview_edit.qc.service import QCRequest, run_qc
 from interview_edit.render.service import RenderRequest, render_cutlist
+from interview_edit.review.color import review_color
+from interview_edit.review.service import ReviewResult, phrase_view, timeline_review
 from interview_edit.status.service import read_project_status
 from interview_edit.sync.service import SyncRequest, parse_manual_offset, sync_take
 from interview_edit.transcribe.service import TranscribeRequest, transcribe_assets
@@ -98,6 +113,14 @@ jianying_app = typer.Typer(
     help="Inspect and install local Jianying draft packages.", no_args_is_help=True
 )
 app.add_typer(jianying_app, name="jianying")
+review_app = typer.Typer(
+    help="Build source phrase and timeline evidence views.", no_args_is_help=True
+)
+app.add_typer(review_app, name="review")
+motion_app = typer.Typer(
+    help="Build and revise editable motion source assets.", no_args_is_help=True
+)
+app.add_typer(motion_app, name="motion")
 
 
 def _show_version(value: bool) -> None:
@@ -1094,6 +1117,9 @@ def cutlist_captions_command(
     cutlist: Annotated[Path | None, typer.Option("--cutlist")] = None,
     item: Annotated[str | None, typer.Option("--item")] = None,
     max_chars: Annotated[int, typer.Option("--max-chars", min=2, max=80)] = 18,
+    min_duration_us: Annotated[int, typer.Option("--min-duration-us", min=0, max=5_000_000)] = 0,
+    pause_us: Annotated[int, typer.Option("--pause-us", min=0, max=5_000_000)] = 0,
+    max_cps: Annotated[int, typer.Option("--max-cps", min=1, max=80)] = 20,
     style: Annotated[
         Literal["standard", "minimal"] | None,
         typer.Option("--style", help="Whole cut-list subtitle preset."),
@@ -1115,6 +1141,9 @@ def cutlist_captions_command(
             path,
             item_id=item,
             max_chars=max_chars,
+            min_duration_us=min_duration_us,
+            pause_us=pause_us,
+            max_chars_per_second=max_cps,
             style=style,
             output=output,
             dry_run=options.dry_run,
@@ -1123,6 +1152,516 @@ def cutlist_captions_command(
         _fail(error, command="cutlist captions", json_output=machine)
         return
     _emit_revision(result, "cutlist captions", root, machine)
+
+
+def _emit_motion(result: MotionResult, command: str, machine: bool) -> None:
+    emit(
+        JsonEnvelope(
+            ok=True,
+            command=command,
+            data={
+                "assetPath": str(result.path),
+                "assetId": result.manifest.asset_id if result.manifest else None,
+                "template": result.spec.template,
+                "frameCount": result.frame_count,
+                "durationUs": result.spec.duration_us,
+                "dryRun": result.dry_run,
+            },
+            artifacts=[]
+            if result.dry_run
+            else [ArtifactReference(kind="motion-asset", path=str(result.path))],
+            warnings=[
+                WarningPayload(
+                    code="motion_source_editability",
+                    message=(
+                        "Edit the retained source spec and generate a new asset; "
+                        "movie pixels are not native text layers."
+                    ),
+                )
+            ],
+        ),
+        json_output=machine,
+        human_lines=[f"{'Would build' if result.dry_run else 'Built'} motion: {result.path}"],
+    )
+
+
+@motion_app.command("build")
+def motion_build_command(
+    ctx: typer.Context,
+    text: Annotated[str, typer.Option("--text")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    template: Annotated[
+        Literal["callout", "lower_third", "chapter"], typer.Option("--template")
+    ] = "callout",
+    secondary: Annotated[str, typer.Option("--secondary")] = "",
+    font: Annotated[Path | None, typer.Option("--font")] = None,
+    width: Annotated[int | None, typer.Option("--width", min=320, max=3840)] = None,
+    height: Annotated[int | None, typer.Option("--height", min=180, max=3840)] = None,
+    duration_us: Annotated[
+        int, typer.Option("--duration-us", min=800_000, max=10_000_000)
+    ] = 3_000_000,
+    enter_us: Annotated[int, typer.Option("--enter-us", min=0, max=2_000_000)] = 300_000,
+    exit_us: Annotated[int, typer.Option("--exit-us", min=0, max=2_000_000)] = 250_000,
+    accent: Annotated[str, typer.Option("--accent")] = "#76A9FA",
+    foreground: Annotated[str, typer.Option("--foreground")] = "#FFFFFF",
+    background: Annotated[str, typer.Option("--background")] = "#151B24",
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Generate a transparent local motion clip with retained source parameters."""
+    from pydantic import ValidationError
+
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config = load_project_config(_selected_project(project, options.project))
+        selected_font = font or (config.fonts[0] if config.fonts else None)
+        if selected_font is None:
+            raise UsageError("motion_font_required", "Declare a project font or pass --font.")
+        spec = MotionSpec(
+            template=template,
+            text=text,
+            secondary=secondary,
+            font_path=str(selected_font),
+            width=width or config.timeline.width,
+            height=height or config.timeline.height,
+            frame_rate=config.timeline.frame_rate,
+            duration_us=duration_us,
+            enter_us=enter_us,
+            exit_us=exit_us,
+            accent=accent,
+            foreground=foreground,
+            background=background,
+        )
+        result = build_motion(
+            config,
+            spec,
+            dry_run=options.dry_run,
+            progress=None if options.quiet else _emit_progress,
+        )
+    except ValidationError:
+        _fail(
+            UsageError(
+                "motion_spec_invalid",
+                "Motion layout, timing or palette is outside supported bounds.",
+            ),
+            command="motion build",
+            json_output=machine,
+        )
+        return
+    except InterviewEditError as error:
+        _fail(error, command="motion build", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError("motion_io_failed", "Could not read or write motion resources."),
+            command="motion build",
+            json_output=machine,
+        )
+        return
+    _emit_motion(result, "motion build", machine)
+
+
+@motion_app.command("edit")
+def motion_edit_command(
+    ctx: typer.Context,
+    asset: Annotated[Path, typer.Option("--asset")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    text: Annotated[str | None, typer.Option("--text")] = None,
+    secondary: Annotated[str | None, typer.Option("--secondary")] = None,
+    template: Annotated[
+        Literal["callout", "lower_third", "chapter"] | None, typer.Option("--template")
+    ] = None,
+    duration_us: Annotated[
+        int | None, typer.Option("--duration-us", min=800_000, max=10_000_000)
+    ] = None,
+    enter_us: Annotated[int | None, typer.Option("--enter-us", min=0, max=2_000_000)] = None,
+    exit_us: Annotated[int | None, typer.Option("--exit-us", min=0, max=2_000_000)] = None,
+    accent: Annotated[str | None, typer.Option("--accent")] = None,
+    foreground: Annotated[str | None, typer.Option("--foreground")] = None,
+    background: Annotated[str | None, typer.Option("--background")] = None,
+    font: Annotated[Path | None, typer.Option("--font")] = None,
+    width: Annotated[int | None, typer.Option("--width", min=320, max=3840)] = None,
+    height: Annotated[int | None, typer.Option("--height", min=180, max=3840)] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Retain old motion assets and generate a new asset after source edits."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config = load_project_config(_selected_project(project, options.project))
+        values = {
+            key: value
+            for key, value in dict(
+                text=text,
+                secondary=secondary,
+                template=template,
+                duration_us=duration_us,
+                enter_us=enter_us,
+                exit_us=exit_us,
+                accent=accent,
+                foreground=foreground,
+                background=background,
+                font_path=str(font) if font is not None else None,
+                width=width,
+                height=height,
+            ).items()
+            if value is not None
+        }
+        result = revise_motion(
+            config,
+            asset,
+            values,
+            dry_run=options.dry_run,
+            progress=None if options.quiet else _emit_progress,
+        )
+    except InterviewEditError as error:
+        _fail(error, command="motion edit", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError("motion_io_failed", "Could not read or write motion resources."),
+            command="motion edit",
+            json_output=machine,
+        )
+        return
+    _emit_motion(result, "motion edit", machine)
+
+
+@motion_app.command("verify")
+def motion_verify_command(
+    ctx: typer.Context,
+    asset: Annotated[Path, typer.Option("--asset")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    machine = json_output or _options(ctx).json_output
+    try:
+        config = load_project_config(_selected_project(project, _options(ctx).project))
+        _, manifest = verify_motion(config, asset)
+    except InterviewEditError as error:
+        _fail(error, command="motion verify", json_output=machine)
+        return
+    emit(
+        JsonEnvelope(
+            ok=True,
+            command="motion verify",
+            data={"assetId": manifest.asset_id, "packageValidation": "passed"},
+        ),
+        json_output=machine,
+        human_lines=["Motion asset validation passed."],
+    )
+
+
+@motion_app.command("from-spec")
+def motion_from_spec_command(
+    ctx: typer.Context,
+    spec: Annotated[Path, typer.Option("--spec")],
+    font: Annotated[Path | None, typer.Option("--font")] = None,
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Regenerate a portable source specification into this project's artifact root."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config = load_project_config(_selected_project(project, options.project))
+        result = import_motion_spec(
+            config,
+            spec,
+            font=font,
+            dry_run=options.dry_run,
+            progress=None if options.quiet else _emit_progress,
+        )
+    except InterviewEditError as error:
+        _fail(error, command="motion from-spec", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError("motion_io_failed", "Could not read or write motion resources."),
+            command="motion from-spec",
+            json_output=machine,
+        )
+        return
+    _emit_motion(result, "motion from-spec", machine)
+
+
+@cutlist_app.command("motion")
+def cutlist_motion_command(
+    ctx: typer.Context,
+    item: Annotated[str, typer.Option("--item")],
+    asset: Annotated[Path, typer.Option("--asset")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    cutlist: Annotated[Path | None, typer.Option("--cutlist")] = None,
+    start_us: Annotated[int, typer.Option("--start-us", min=0)] = 0,
+    duration_us: Annotated[int | None, typer.Option("--duration-us", min=1)] = None,
+    output: Annotated[Path | None, typer.Option("--output")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config, path, document, root = _editing_context(options, project, cutlist)
+        result = attach_motion(
+            config,
+            document,
+            path,
+            item_id=item,
+            asset_path=asset,
+            start_us=start_us,
+            duration_us=duration_us,
+            output=output,
+            dry_run=options.dry_run,
+        )
+    except InterviewEditError as error:
+        _fail(error, command="cutlist motion", json_output=machine)
+        return
+    _emit_revision(result, "cutlist motion", root, machine)
+
+
+@cutlist_app.command("color")
+def cutlist_color_command(
+    ctx: typer.Context,
+    asset: Annotated[str, typer.Option("--asset")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    cutlist: Annotated[Path | None, typer.Option("--cutlist")] = None,
+    brightness: Annotated[float | None, typer.Option("--brightness", min=-0.15, max=0.15)] = None,
+    contrast: Annotated[float | None, typer.Option("--contrast", min=0.75, max=1.25)] = None,
+    gamma: Annotated[float | None, typer.Option("--gamma", min=0.75, max=1.25)] = None,
+    saturation: Annotated[float | None, typer.Option("--saturation", min=0, max=1.5)] = None,
+    reset: Annotated[bool, typer.Option("--reset")] = False,
+    output: Annotated[Path | None, typer.Option("--output")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Write a source-specific SDR correction revision with finite, bounded parameters."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config, path, document, root = _editing_context(options, project, cutlist)
+        values = {
+            name: value
+            for name, value in dict(
+                brightness=brightness, contrast=contrast, gamma=gamma, saturation=saturation
+            ).items()
+            if value is not None
+        }
+        result = set_source_color(
+            config,
+            document,
+            path,
+            asset_id=asset,
+            values=values,
+            reset=reset,
+            output=output,
+            dry_run=options.dry_run,
+        )
+    except InterviewEditError as error:
+        _fail(error, command="cutlist color", json_output=machine)
+        return
+    _emit_revision(result, "cutlist color", root, machine)
+
+
+@review_app.command("color")
+def review_color_command(
+    ctx: typer.Context,
+    asset: Annotated[str, typer.Option("--asset")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    cutlist: Annotated[Path | None, typer.Option("--cutlist")] = None,
+    reference: Annotated[str | None, typer.Option("--reference")] = None,
+    in_us: Annotated[int, typer.Option("--in-us", min=0)] = 0,
+    out_us: Annotated[int | None, typer.Option("--out-us", min=1)] = None,
+    samples: Annotated[int, typer.Option("--samples", min=2, max=8)] = 4,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Create an original/corrected comparison and numerical pixel statistics for an SDR source."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        selected = _selected_project(project, options.project)
+        config = load_project_config(selected)
+        root = config_path_for(selected).parent
+        path = resolve_cutlist_path(root, cutlist) if cutlist else None
+        result = review_color(
+            config,
+            asset_id=asset,
+            start_us=in_us,
+            end_us=out_us,
+            reference_id=reference,
+            cutlist_path=path,
+            samples=samples,
+            dry_run=options.dry_run,
+        )
+    except InterviewEditError as error:
+        _fail(error, command="review color", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError("color_io_failed", "Could not read or write color evidence."),
+            command="review color",
+            json_output=machine,
+        )
+        return
+    report = result.report
+    emit(
+        JsonEnvelope(
+            ok=True,
+            command="review color",
+            data={
+                "reviewPath": str(result.path),
+                "sampleCount": result.count,
+                "dryRun": result.dry_run,
+                "qualityVerified": False,
+                "correctionStatus": report.correction_status if report else "planned",
+                "correction": report.correction.model_dump() if report else None,
+                "before": report.before.model_dump() if report else None,
+                "after": report.after.model_dump() if report else None,
+            },
+            artifacts=[]
+            if result.dry_run
+            else [ArtifactReference(kind="color-review", path=str(result.path))],
+            warnings=[
+                WarningPayload(
+                    code=code,
+                    message="Inspect color evidence and scene intent before applying changes.",
+                )
+                for code in result.warnings
+            ],
+        ),
+        json_output=machine,
+        human_lines=[
+            f"{'Would create' if result.dry_run else 'Created'} color review: {result.path}"
+        ],
+    )
+
+
+@cutlist_app.command("audio")
+def cutlist_audio_command(
+    ctx: typer.Context,
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    cutlist: Annotated[Path | None, typer.Option("--cutlist")] = None,
+    edge_fade_us: Annotated[int, typer.Option("--edge-fade-us", min=0, max=50_000)] = 5_000,
+    output: Annotated[Path | None, typer.Option("--output")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Write a revision with bounded audio smoothing at discontinuous source joins."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config, path, document, root = _editing_context(options, project, cutlist)
+        result = set_audio_policy(
+            config,
+            document,
+            path,
+            edge_fade_us=edge_fade_us,
+            output=output,
+            dry_run=options.dry_run,
+        )
+    except InterviewEditError as error:
+        _fail(error, command="cutlist audio", json_output=machine)
+        return
+    _emit_revision(result, "cutlist audio", root, machine)
+
+
+def _emit_review(result: ReviewResult, command: str, machine: bool) -> None:
+    emit(
+        JsonEnvelope(
+            ok=True,
+            command=command,
+            data={
+                "reviewPath": str(result.path),
+                "entryCount": result.count,
+                "dryRun": result.dry_run,
+                "listeningVerified": False,
+            },
+            artifacts=[]
+            if result.dry_run
+            else [ArtifactReference(kind="editorial-review", path=str(result.path))],
+            warnings=[
+                WarningPayload(
+                    code="review_contains_content",
+                    message="Review files contain text/images/audio; observe project privacy mode.",
+                ),
+                *[
+                    WarningPayload(
+                        code=code,
+                        message="Review report includes evidence limits; inspect its warnings.",
+                    )
+                    for code in result.warnings
+                ],
+            ],
+        ),
+        json_output=machine,
+        human_lines=[f"{'Would create' if result.dry_run else 'Created'} review: {result.path}"],
+    )
+
+
+@review_app.command("transcript")
+def review_transcript_command(
+    ctx: typer.Context,
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    asset: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--asset", help="Repeat for selected assets; defaults to transcribed sources."
+        ),
+    ] = None,
+    pause_us: Annotated[int, typer.Option("--pause-us", min=1, max=5_000_000)] = 500_000,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Create a source-linked phrase reading view without exposing text in CLI output."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config = load_project_config(_selected_project(project, options.project))
+        result = phrase_view(config, asset_ids=asset, pause_us=pause_us, dry_run=options.dry_run)
+    except InterviewEditError as error:
+        _fail(error, command="review transcript", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError("review_io_failed", "Could not read or write review evidence."),
+            command="review transcript",
+            json_output=machine,
+        )
+        return
+    _emit_review(result, "review transcript", machine)
+
+
+@review_app.command("timeline")
+def review_timeline_command(
+    ctx: typer.Context,
+    focus_us: Annotated[int, typer.Option("--focus-us", min=0)],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    asset: Annotated[str | None, typer.Option("--asset")] = None,
+    run: Annotated[str | None, typer.Option("--run")] = None,
+    window_us: Annotated[int, typer.Option("--window-us", min=1, max=5_000_000)] = 1_500_000,
+    frames: Annotated[int, typer.Option("--frames", min=2, max=16)] = 8,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Review source or rendered cut windows with filmstrip, PCM waveform and word timing."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config = load_project_config(_selected_project(project, options.project))
+        result = timeline_review(
+            config,
+            asset_id=asset,
+            run_id=run,
+            focus_us=focus_us,
+            window_us=window_us,
+            frame_count=frames,
+            dry_run=options.dry_run,
+        )
+    except InterviewEditError as error:
+        _fail(error, command="review timeline", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError("review_io_failed", "Could not read or write review evidence."),
+            command="review timeline",
+            json_output=machine,
+        )
+        return
+    _emit_review(result, "review timeline", machine)
 
 
 @cutlist_app.command("speech-check")
@@ -1586,6 +2125,13 @@ def jianying_export_command(
             help="Copy original media/fonts for a portable editable project.",
         ),
     ] = True,
+    native_effects: Annotated[
+        bool,
+        typer.Option(
+            "--native-effects",
+            help="Opt into experimental native slider and motion-track mappings.",
+        ),
+    ] = False,
     resume: Annotated[
         bool,
         typer.Option(
@@ -1607,6 +2153,7 @@ def jianying_export_command(
             name=name,
             target=target,
             bundle_media=bundle_media,
+            native_effects=native_effects,
             dry_run=options.dry_run,
             resume=resume,
             progress=None if options.quiet else _emit_progress,
@@ -1634,8 +2181,22 @@ def jianying_export_command(
                 "dryRun": result.dry_run,
                 "nativeValidation": "not_run",
                 "exportId": result.manifest.export_id if result.manifest else None,
+                "nativeEffects": native_effects,
             },
             warnings=[
+                *(
+                    [
+                        WarningPayload(
+                            code="jianying_effects_experimental",
+                            message=(
+                                "Native sliders are not pixel-equivalent; "
+                                "motion text needs source regeneration."
+                            ),
+                        )
+                    ]
+                    if native_effects
+                    else []
+                ),
                 WarningPayload(
                     code="jianying_client_unverified",
                     message="Native app import, editing and rendering have not been verified.",
@@ -1796,6 +2357,186 @@ def jianying_check_output_command(
             "Output media checks passed. Review picture, subtitles and sound in the editor."
         ],
     )
+
+
+def _emit_native_job(
+    root: Path, job: NativeExportJob, command: str, machine: bool, *, dry_run: bool = False
+) -> None:
+    emit(
+        JsonEnvelope(
+            ok=True,
+            command=command,
+            runId=job.job_id,
+            data={
+                "jobId": job.job_id,
+                "state": job.state,
+                "backend": job.backend,
+                "jobPath": str(root / "job.json"),
+                "incomingPath": str(root / "incoming.mp4"),
+                "outputPath": str(root / "result/video.mp4") if job.state == "succeeded" else None,
+                "errorCode": job.error_code,
+                "dryRun": dry_run,
+                "nativeValidation": "not_run",
+            },
+            warnings=[
+                WarningPayload(
+                    code="jianying_native_acceptance_pending",
+                    message=(
+                        "Completion means media checks; "
+                        "client editability and visual acceptance are separate."
+                    ),
+                )
+            ],
+            artifacts=[]
+            if dry_run
+            else [ArtifactReference(kind="native-export-job", path=str(root / "job.json"))],
+        ),
+        json_output=machine,
+        human_lines=[
+            f"Native export job: {job.job_id}",
+            f"State: {job.state}",
+            f"Incoming video: {root / 'incoming.mp4'}",
+        ],
+    )
+
+
+@jianying_app.command("export-video")
+def native_export_video_command(
+    ctx: typer.Context,
+    draft: Annotated[Path, typer.Option("--draft")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    backend: Annotated[Literal["manual", "windows-legacy"], typer.Option("--backend")] = "manual",
+    installed_draft: Annotated[Path | None, typer.Option("--installed-draft")] = None,
+    expected_duration_us: Annotated[
+        int | None, typer.Option("--expected-duration-us", min=1)
+    ] = None,
+    approve: Annotated[bool, typer.Option("--approve")] = False,
+    timeout_seconds: Annotated[int, typer.Option("--timeout-seconds", min=30, max=3600)] = 1200,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Prepare an export job; --approve runs the optional Windows <=6 native driver."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config = load_project_config(_selected_project(project, options.project))
+        if approve and backend == "manual":
+            raise UsageError(
+                "jianying_manual_backend", "Manual jobs finish with a user-selected completed MP4."
+            )
+        root, job = create_job(
+            config,
+            draft,
+            backend=backend,
+            installed=installed_draft,
+            expected_duration_us=expected_duration_us,
+            dry_run=options.dry_run,
+        )
+        if approve and not options.dry_run:
+            root, job = run_legacy_job(
+                config, job.job_id, approved=True, timeout_seconds=timeout_seconds
+            )
+    except InterviewEditError as error:
+        _fail(error, command="jianying export-video", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError(
+                "jianying_io_failed", "Could not read or write native export resources."
+            ),
+            command="jianying export-video",
+            json_output=machine,
+        )
+        return
+    _emit_native_job(root, job, "jianying export-video", machine, dry_run=options.dry_run)
+
+
+@jianying_app.command("run-export")
+def native_run_export_command(
+    ctx: typer.Context,
+    job: Annotated[str, typer.Option("--job")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    approve: Annotated[bool, typer.Option("--approve")] = False,
+    timeout_seconds: Annotated[int, typer.Option("--timeout-seconds", min=30, max=3600)] = 1200,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Run a previously prepared Windows <=6 export job with explicit approval."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config = load_project_config(_selected_project(project, options.project))
+        root, record = (
+            load_job(config, job)
+            if options.dry_run
+            else run_legacy_job(config, job, approved=approve, timeout_seconds=timeout_seconds)
+        )
+    except InterviewEditError as error:
+        _fail(error, command="jianying run-export", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError(
+                "jianying_io_failed", "Could not read or write native export resources."
+            ),
+            command="jianying run-export",
+            json_output=machine,
+        )
+        return
+    _emit_native_job(root, record, "jianying run-export", machine, dry_run=options.dry_run)
+
+
+@jianying_app.command("finish-export")
+def native_finish_export_command(
+    ctx: typer.Context,
+    job: Annotated[str, typer.Option("--job")],
+    video: Annotated[Path, typer.Option("--video")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Check and atomically publish a completed native video without overwriting prior output."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config = load_project_config(_selected_project(project, options.project))
+        root, record = load_job(config, job) if options.dry_run else finish_job(config, job, video)
+    except InterviewEditError as error:
+        _fail(error, command="jianying finish-export", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError(
+                "jianying_io_failed", "Could not read or write native export resources."
+            ),
+            command="jianying finish-export",
+            json_output=machine,
+        )
+        return
+    _emit_native_job(root, record, "jianying finish-export", machine, dry_run=options.dry_run)
+
+
+@jianying_app.command("export-status")
+def native_export_status_command(
+    ctx: typer.Context,
+    job: Annotated[str, typer.Option("--job")],
+    project: Annotated[Path | None, typer.Option("--project")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Inspect an input-bound export job and recover a committed completion receipt."""
+    options = _options(ctx)
+    machine = json_output or options.json_output
+    try:
+        config = load_project_config(_selected_project(project, options.project))
+        root, record = load_job(config, job)
+    except InterviewEditError as error:
+        _fail(error, command="jianying export-status", json_output=machine)
+        return
+    except OSError:
+        _fail(
+            PathSafetyError("jianying_io_failed", "Could not inspect the export job."),
+            command="jianying export-status",
+            json_output=machine,
+        )
+        return
+    _emit_native_job(root, record, "jianying export-status", machine)
 
 
 @jianying_app.command("install")

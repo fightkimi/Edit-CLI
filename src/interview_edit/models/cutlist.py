@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from fractions import Fraction
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -23,6 +23,7 @@ class OverlayKind(StrEnum):
     BROLL = "broll"
     STILL = "still"
     TITLE = "title"
+    MOTION = "motion"
 
 
 class TransitionKind(StrEnum):
@@ -68,6 +69,7 @@ class Overlay(CutListModel):
     image_path: str | None = None
     text: str | None = Field(default=None, min_length=1)
     font_path: str | None = None
+    motion_path: str | None = None
 
     @property
     def end_us(self) -> int:
@@ -92,6 +94,10 @@ class Overlay(CutListModel):
             raise ValueError("still overlay requires image_path")
         if self.kind is OverlayKind.TITLE and not self.text:
             raise ValueError("title overlay requires text")
+        if self.kind is OverlayKind.MOTION and not self.motion_path:
+            raise ValueError("motion overlay requires a generated motion asset directory")
+        if self.kind is not OverlayKind.MOTION and self.motion_path is not None:
+            raise ValueError("only motion overlays may define motion_path")
         return self
 
 
@@ -177,12 +183,31 @@ class SubtitlePolicy(CutListModel):
     style: Literal["standard", "minimal"] = "standard"
 
 
+class AudioPolicy(CutListModel):
+    edge_fade_us: int = Field(default=0, ge=0, le=50_000, strict=True)
+
+
+class ColorCorrection(CutListModel):
+    brightness: float = Field(default=0, ge=-0.15, le=0.15, strict=True)
+    contrast: float = Field(default=1, ge=0.75, le=1.25, strict=True)
+    gamma: float = Field(default=1, ge=0.75, le=1.25, strict=True)
+    saturation: float = Field(default=1, ge=0, le=1.5, strict=True)
+
+
+class ColorPolicy(CutListModel):
+    by_source: dict[Annotated[str, Field(pattern=r"^asset_[a-f0-9]{24}$")], ColorCorrection] = (
+        Field(default_factory=dict)
+    )
+
+
 class CutList(CutListModel):
     schema_version: Literal["1"] = "1"
     project_id: str = Field(pattern=r"^prj_[a-z0-9][a-z0-9_-]{5,63}$")
     timeline: TimelineSpec = Field(default_factory=TimelineSpec)
     acts: list[Act] = Field(default_factory=list)
     subtitle_policy: SubtitlePolicy = Field(default_factory=SubtitlePolicy)
+    audio_policy: AudioPolicy = Field(default_factory=AudioPolicy)
+    color_policy: ColorPolicy = Field(default_factory=ColorPolicy)
     render_profile: str = Field(default="preview", pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
