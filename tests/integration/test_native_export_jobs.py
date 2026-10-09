@@ -28,7 +28,7 @@ from tests.integration.test_jianying_output import setup
 
 def fixture(tmp_path):
     config, path, doc = setup(tmp_path)
-    package = export_jianying(config, doc, path, name="Jobs").draft_path
+    package = export_jianying(config, doc, path, name="中文导出").draft_path
     video = tmp_path / "reported-native.mp4"
     make_video(video)
     return config, package, video
@@ -44,7 +44,7 @@ def test_manual_job_checks_publish_idempotence_and_immutable_sources(tmp_path):
     assert completed.state == "succeeded" and completed.native_validation == "not_run"
     assert (root / "result/video.mp4").read_bytes() == raw == video.read_bytes()
     assert finish_job(config, job.job_id, video)[1].output_sha256 == completed.output_sha256
-    (root / "result/output-check.json").write_text("{}")
+    (root / "result/output-check.json").write_text("{}", encoding="utf-8")
     with pytest.raises(PreflightError) as corrupt:
         load_job(config, job.job_id)
     assert corrupt.value.code == "jianying_job_output_changed"
@@ -75,7 +75,7 @@ def test_job_recovers_atomic_result_after_status_write_interruption(tmp_path, mo
     monkeypatch.setattr(native_jobs, "save_job", interrupted)
     with pytest.raises(OSError):
         finish_job(config, job.job_id, video)
-    assert json.loads((root / "job.json").read_text())["state"] == "planned"
+    assert json.loads((root / "job.json").read_text(encoding="utf-8"))["state"] == "planned"
     assert load_job(config, job.job_id)[1].state == "succeeded"
 
 
@@ -86,9 +86,9 @@ def test_job_rejects_concurrent_completion_and_changed_package(tmp_path):
         finish_job(config, job.job_id, video)
     assert busy.value.code == "jianying_job_busy"
     control = package / "export-manifest.json"
-    data = json.loads(control.read_text())
+    data = json.loads(control.read_text(encoding="utf-8"))
     data["created_at"] = "changed"
-    control.write_text(json.dumps(data))
+    control.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(PreflightError) as changed:
         finish_job(config, job.job_id, video)
     assert changed.value.code == "jianying_job_input_changed"
@@ -98,7 +98,7 @@ def legacy_fixture(tmp_path, monkeypatch):
     config, path, doc = setup(tmp_path)
     doc.timeline.width = 1280
     doc.timeline.height = 720
-    path.write_text(serialize_cutlist(doc))
+    path.write_text(serialize_cutlist(doc), encoding="utf-8")
     package = export_jianying(config, doc, path, name="Unique legacy").draft_path
     library = tmp_path / "library"
     library.mkdir()
@@ -163,9 +163,9 @@ def test_legacy_timeout_keeps_partial_and_changed_installed_draft_blocks_finish(
     assert load_job(config, job.job_id)[1].state == "failed"
     assert (root / "incoming.mp4").read_bytes() == b"partial"
     entry = installed / "draft_content.json"
-    value = json.loads(entry.read_text())
+    value = json.loads(entry.read_text(encoding="utf-8"))
     value["duration"] += 1
-    entry.write_text(json.dumps(value))
+    entry.write_text(json.dumps(value), encoding="utf-8")
     with pytest.raises(PreflightError) as changed:
         finish_job(config, job.job_id, video)
     assert changed.value.code == "jianying_job_input_changed"

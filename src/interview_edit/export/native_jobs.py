@@ -79,7 +79,7 @@ def load_job(config: ProjectConfig, job_id: str) -> tuple[Path, NativeExportJob]
     try:
         if control.stat().st_size > 1024 * 1024:
             raise ValueError("size")
-        job = NativeExportJob.model_validate_json(control.read_text())
+        job = NativeExportJob.model_validate_json(control.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise PreflightError("jianying_job_invalid", "Export job is missing or invalid.") from exc
     if job.job_id != job_id or job.project_id != config.project_id:
@@ -89,7 +89,7 @@ def load_job(config: ProjectConfig, job_id: str) -> tuple[Path, NativeExportJob]
         try:
             if receipt.stat().st_size > 1024 * 1024:
                 raise ValueError("size")
-            completed = NativeExportJob.model_validate_json(receipt.read_text())
+            completed = NativeExportJob.model_validate_json(receipt.read_text(encoding="utf-8"))
             fields = {"state", "output_sha256", "output_check_sha256", "error_code"}
             if completed.state != "succeeded" or completed.model_dump(
                 exclude=fields

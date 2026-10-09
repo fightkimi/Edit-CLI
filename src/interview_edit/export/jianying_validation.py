@@ -538,14 +538,18 @@ def validate_native(
                 )
             if package_root is not None and name == "spec.json":
                 require(
-                    MotionSpec.model_validate_json((package_root / relative).read_text())
+                    MotionSpec.model_validate_json(
+                        (package_root / relative).read_text(encoding="utf-8")
+                    )
                     == motion.spec,
                     "motion_assets",
                     "Retained motion source differs.",
                 )
             if package_root is not None and name == "manifest.json":
                 require(
-                    MotionManifest.model_validate_json((package_root / relative).read_text())
+                    MotionManifest.model_validate_json(
+                        (package_root / relative).read_text(encoding="utf-8")
+                    )
                     == motion.manifest,
                     "motion_assets",
                     "Retained motion manifest differs.",

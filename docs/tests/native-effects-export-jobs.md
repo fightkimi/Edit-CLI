@@ -4,7 +4,7 @@
 was launched, installed, edited or exported during this development iteration.
 
 Fresh checks: Ruff passed; mypy passed (88 source files); full pytest **237 passed, 1 skipped
-in 51.98 seconds** (Windows PE version API on Mac). Skill checks passed separately after reference
+in 53.55 seconds** (Windows PE version API on Mac). Skill checks passed separately after reference
 updates. Source/wheel build passed. An isolated wheel imported from its own site-packages outside
 the repository and completed schema-3 export → verify → bundled-source regeneration → planned job
 → simulated output completion → status. Export ID `71A9B850-1B4D-4D5E-A2B5-3A893A67E3EB`, job ID
@@ -28,6 +28,10 @@ Tested with synthetic media and simulated GUI/driver objects:
 Optional SDK 0.3.0 API/selectors were verified from the official release wheel without execution.
 Windows CI installs the optional runtime and checks interfaces without creating a controller.
 All OS CI remains separate from GUI acceptance; fixtures do not certify a native render.
+
+Initial Windows CI exposed locale-dependent JSON reads in the new tests and retained-source/job
+readers. They now specify UTF-8 explicitly, with a Chinese package-name fixture exercising the
+job/receipt path. The SDK interface check itself passed on the Windows runner without GUI use.
 
 Limits: native slider appearance is unmeasured; gamma mapping remains unsupported. Motion text is
 regenerated from source, not editable native text. Mac/modern Windows automatic GUI export is absent;

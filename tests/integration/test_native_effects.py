@@ -25,7 +25,7 @@ def test_native_effects_keep_motion_sources_and_color_on_visual_only(project_cut
     doc.color_policy.by_source[doc.acts[0].items[0].source_id] = ColorCorrection(
         brightness=0.03, contrast=0.9, saturation=1.1
     )
-    path.write_text(serialize_cutlist(doc))
+    path.write_text(serialize_cutlist(doc), encoding="utf-8")
     revision = attach_motion(
         config, doc, path, item_id="item_001", asset_path=built.path, duration_us=800000
     )
@@ -39,7 +39,7 @@ def test_native_effects_keep_motion_sources_and_color_on_visual_only(project_cut
     assert (exported.draft_path / motion.resources["spec.json"]).read_bytes() == (
         built.path / "spec.json"
     ).read_bytes()
-    content = json.loads((exported.draft_path / "draft_info.json").read_text())
+    content = json.loads((exported.draft_path / "draft_info.json").read_text(encoding="utf-8"))
     track = next(t for t in content["tracks"] if t["name"] == "动效")
     assert track["segments"][0]["source_timerange"] == {"start": 0, "duration": 800000}
     video = next(t for t in content["tracks"] if t["name"] == "主画面")["segments"][0]
@@ -67,21 +67,21 @@ def test_native_color_rehashed_parameter_mutation_fails(project_cut):
     project, path = project_cut
     doc = load_cutlist(path)
     doc.color_policy.by_source[doc.acts[0].items[0].source_id] = ColorCorrection(brightness=0.03)
-    path.write_text(serialize_cutlist(doc))
+    path.write_text(serialize_cutlist(doc), encoding="utf-8")
     result = export_jianying(
         load_project_config(project), doc, path, name="Color", target="windows", native_effects=True
     )
     entry = result.draft_path / "draft_content.json"
-    data = json.loads(entry.read_text())
+    data = json.loads(entry.read_text(encoding="utf-8"))
     group = data["tracks"][0]["segments"][0]["common_keyframes"][0]
     for point in group["keyframe_list"]:
         point["values"] = [0.04]
-    entry.write_text(json.dumps(data))
+    entry.write_text(json.dumps(data), encoding="utf-8")
     manifest_path = result.draft_path / "export-manifest.json"
-    manifest = json.loads(manifest_path.read_text())
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     record = next(f for f in manifest["files"] if f["relative_path"] == entry.name)
     record.update(size=entry.stat().st_size, sha256=sha256_file(entry))
-    manifest_path.write_text(json.dumps(manifest))
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     with pytest.raises(PreflightError):
         verify_draft(result.draft_path)
 
@@ -90,7 +90,7 @@ def test_native_gamma_not_silently_mapped(project_cut):
     project, path = project_cut
     doc = load_cutlist(path)
     doc.color_policy.by_source[doc.acts[0].items[0].source_id] = ColorCorrection(gamma=1.1)
-    path.write_text(serialize_cutlist(doc))
+    path.write_text(serialize_cutlist(doc), encoding="utf-8")
     with pytest.raises(PreflightError) as error:
         export_jianying(load_project_config(project), doc, path, name="Gamma", native_effects=True)
     assert error.value.code == "jianying_gamma_unsupported"
